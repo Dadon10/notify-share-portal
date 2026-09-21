@@ -75,7 +75,7 @@ function Portal() {
 
   useEffect(() => {
     if (!user) return;
-    const fullName = String(user.user_metadata?.full_name ?? user.email?.split("@")[0] ?? "Team member");
+    const fullName = String(user.user_metadata?.["full_name"] ?? user.email?.split("@")[0] ?? "Team member");
     void supabase.from("profiles").upsert({ id: user.id, full_name: fullName, email: user.email ?? "" }, { onConflict: "id" });
     void loadData();
   }, [user]);
@@ -143,7 +143,7 @@ function Portal() {
           <Button variant="nav" className="w-full justify-start" onClick={() => setActive("Settings")}><Settings />Settings</Button>
           <div className="mt-3 flex items-center gap-3 rounded-md bg-sidebar-accent p-3">
             <div className="grid h-9 w-9 place-items-center rounded-full bg-primary text-sm font-bold text-primary-foreground">{(user.email?.[0] ?? "U").toUpperCase()}</div>
-            <div className="min-w-0 flex-1"><p className="truncate text-sm font-semibold">{user.user_metadata?.full_name ?? "Team member"}</p><p className="truncate text-xs text-muted-foreground">{user.email}</p></div>
+            <div className="min-w-0 flex-1"><p className="truncate text-sm font-semibold">{user.user_metadata?.["full_name"] ?? "Team member"}</p><p className="truncate text-xs text-muted-foreground">{user.email}</p></div>
             <Button variant="ghost" size="icon" onClick={() => supabase.auth.signOut()} aria-label="Sign out"><LogOut /></Button>
           </div>
         </div>
