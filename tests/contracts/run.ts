@@ -171,7 +171,7 @@ async function main() {
     signers: [
       { fullName: "Chanda Mwila-Banda", email: "chanda@example.com", signedAt, fieldCount: 16 },
     ],
-    notarized: { notaryName: "Mutale Phiri", commission: "NP-2291", notarizedAt: signedAt },
+    notarized: { notaryName: "Mutale Phiri", notarizedAt: signedAt },
     completedAt: signedAt,
   });
   const completedText = await textOf(completed);

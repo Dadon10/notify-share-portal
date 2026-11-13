@@ -37,9 +37,6 @@ export type Profile = {
   department: string;
   is_admin: boolean;
   is_notary: boolean;
-  notary_commission: string;
-  notary_jurisdiction: string;
-  notary_commission_expires: string;
 };
 
 const MAX_UPLOAD_BYTES = 20971520;
@@ -108,11 +105,7 @@ export function ContractForm({
       : profileById.get(id)?.full_name || profileById.get(id)?.email || "Unknown";
   const signerIndex = (id: string) => Math.max(0, signerIds.indexOf(id));
   const notaries = profiles.filter(
-    (profile) =>
-      profile.is_notary &&
-      profile.id !== user.id &&
-      !signerIds.includes(profile.id) &&
-      (!profile.notary_commission_expires || profile.notary_commission_expires >= today),
+    (profile) => profile.is_notary && profile.id !== user.id && !signerIds.includes(profile.id),
   );
   const candidates = [
     ...(signerIds.includes(user.id) ? [] : [{ id: user.id, label: `${user.full_name} (you)` }]),
@@ -496,8 +489,8 @@ export function ContractForm({
                       <option value="">Choose a notary…</option>
                       {notaries.map((notary) => (
                         <option key={notary.id} value={notary.id}>
-                          {notary.full_name} · No. {notary.notary_commission}
-                          {notary.notary_jurisdiction ? ` · ${notary.notary_jurisdiction}` : ""}
+                          {notary.full_name}
+                          {notary.department ? ` · ${notary.department}` : ""}
                         </option>
                       ))}
                     </select>
@@ -508,7 +501,7 @@ export function ContractForm({
                 ) : (
                   <p className="rounded-md bg-warning-soft p-3 text-sm">
                     No notaries are available. An administrator can mark someone as a notary in
-                    Settings (with their commission number).
+                    Settings.
                   </p>
                 ))}
             </section>

@@ -39,31 +39,17 @@ type ProfileRow = {
   full_name: string;
   email: string;
   is_notary: number;
-  notary_commission: string;
-  notary_jurisdiction: string;
-  notary_commission_expires: string;
 };
 
 function getProfile(id: string) {
   return database
-    .prepare(
-      "SELECT id, full_name, email, is_notary, notary_commission, notary_jurisdiction, notary_commission_expires FROM profiles WHERE id = ?",
-    )
+    .prepare("SELECT id, full_name, email, is_notary FROM profiles WHERE id = ?")
     .get(id) as ProfileRow | undefined;
 }
 
-function todayIso() {
-  return new Date().toISOString().slice(0, 10);
-}
-
 function assertNotaryActive(notary: ProfileRow) {
-  if (!notary.is_notary || !notary.notary_commission)
+  if (!notary.is_notary)
     throw new Error(`${notary.full_name || "This person"} is not set up as a notary in Settings.`);
-  if (notary.notary_commission_expires && notary.notary_commission_expires < todayIso()) {
-    throw new Error(
-      `${notary.full_name}'s notary commission expired on ${notary.notary_commission_expires}. An administrator must update it in Settings.`,
-    );
-  }
 }
 
 function safeName(fileName: string) {
@@ -299,7 +285,7 @@ export async function createContractDocument(input: {
       recordDocumentActivity(
         documentId,
         "assigned_notary",
-        `${notary.full_name} (commission no. ${notary.notary_commission}) will notarize after all parties sign.`,
+        `${notary.full_name} will notarize after all parties sign.`,
         input.ownerId,
       );
     }
@@ -431,8 +417,6 @@ export function getContractSummary(
       ? {
           id: notary.id,
           full_name: notary.full_name,
-          commission: notary.notary_commission,
-          jurisdiction: notary.notary_jurisdiction,
         }
       : null,
     originalSha256: contract.original_sha256,
@@ -456,7 +440,7 @@ export function getContractSummary(
 async function finishContract(
   documentId: string,
   workingBytes: Uint8Array,
-  notarized: { notaryName: string; commission: string; notarizedAt: Date } | null,
+  notarized: { notaryName: string; notarizedAt: Date } | null,
   completedAt: Date,
 ) {
   const document = database
@@ -697,7 +681,6 @@ export async function notarizeContract(input: {
     after,
     {
       notaryName: notary.full_name,
-      commission: notary.notary_commission,
       notarizedAt: notarizedAtDate,
     },
     notarizedAtDate,
@@ -734,8 +717,6 @@ export async function notarizeContract(input: {
         JSON.stringify({
           initials: initialsOf(notary.full_name),
           signedSha256,
-          commission: notary.notary_commission,
-          jurisdiction: notary.notary_jurisdiction,
         }),
         input.documentId,
       );
