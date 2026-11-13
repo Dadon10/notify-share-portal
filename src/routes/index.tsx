@@ -3,7 +3,7 @@ import { useEffect, useMemo, useRef, useState, type ChangeEvent, type FormEvent 
 import {
   Bell, Check, CheckCircle2, ChevronDown, Clock3, FileCheck2, FilePlus2, FileSignature,
   Files, FolderOpen, LayoutDashboard, Menu, PenLine, Pencil, Search, Settings, ArrowDown, ArrowUp,
-  ShieldCheck, Trash2, UploadCloud, Users, X, XCircle,
+  ReceiptText, ShieldCheck, Trash2, UploadCloud, Users, X, XCircle,
 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { DateRangeFilter, type DateFilter } from "@/components/DateRangeFilter";
@@ -232,6 +232,8 @@ function Portal() {
           {[{n:"Overview",i:LayoutDashboard},{n:"Documents",i:Files},{n:"Approvals",i:FileCheck2},{n:"Templates",i:FolderOpen}].map(({n,i:Icon}) => (
             <Button key={n} variant={active === n ? "navActive" : "nav"} className="w-full justify-start" onClick={() => {setActive(n);setMobileNav(false)}}><Icon />{n}{n === "Approvals" && <span className="ml-auto rounded-full bg-warning-soft px-2 py-0.5 text-[11px] font-bold text-warning">{counts.pending}</span>}</Button>
           ))}
+          <p className="px-3 pb-1 pt-5 text-[11px] font-semibold uppercase tracking-[0.12em] text-muted-foreground">Create</p>
+          <Button variant="nav" className="w-full justify-start" onClick={() => {setMobileNav(false);void navigate({ to: "/payment-requisition" });}}><ReceiptText />New payment requisition</Button>
         </nav>
         <div className="absolute bottom-0 w-full border-t border-sidebar-border p-4">
           <Button variant="nav" className="w-full justify-start" onClick={() => setActive("Settings")}><Settings />Settings</Button>
