@@ -30,17 +30,10 @@ git commit -m "$COMMIT_MESSAGE" || {
   exit 0
 }
 
-REMOTE_NAME="${PUSH_REMOTE:-${GIT_PUSH_REMOTE:-}}"
+REMOTE_NAME="${PUSH_REMOTE:-origin}"
+BRANCH_NAME="$(git rev-parse --abbrev-ref HEAD)"
 
-if [ -n "$REMOTE_NAME" ]; then
-  printf '\n%s\n' "Pushing to remote: $REMOTE_NAME"
-  git push "$REMOTE_NAME" HEAD
-else
-  printf '\n%s\n' "Changes are committed locally."
-  printf '%s\n' "To push to the connected Lovable app, configure a non-GitHub remote and run:"
-  printf '%s\n' "  export PUSH_REMOTE=lovable"
-  printf '%s\n' "  ./push.sh \"your commit message\""
-  printf '%s\n' "or: git remote set-url <remote-name> <lovable-repository-url>"
-fi
+printf '\n%s\n' "Pushing $BRANCH_NAME to $REMOTE_NAME..."
+git push -u "$REMOTE_NAME" "$BRANCH_NAME"
 
 printf '\n%s\n' "Done."
