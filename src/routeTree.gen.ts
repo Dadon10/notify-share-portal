@@ -10,33 +10,53 @@
 
 import { Route as rootRouteImport } from './routes/__root'
 import { Route as IndexRouteImport } from './routes/index'
+import { Route as PaymentRequisitionRouteImport } from './routes/payment-requisition'
+import { Route as AuthCrmCallbackRouteImport } from './routes/auth.crm-callback'
 
 const IndexRoute = IndexRouteImport.update({
   id: '/',
   path: '/',
   getParentRoute: () => rootRouteImport,
 } as any)
+const PaymentRequisitionRoute = PaymentRequisitionRouteImport.update({
+  id: '/payment-requisition',
+  path: '/payment-requisition',
+  getParentRoute: () => rootRouteImport,
+} as any)
+const AuthCrmCallbackRoute = AuthCrmCallbackRouteImport.update({
+  id: '/auth/crm-callback',
+  path: '/auth/crm-callback',
+  getParentRoute: () => rootRouteImport,
+} as any)
 
 export interface FileRoutesByFullPath {
   '/': typeof IndexRoute
+  '/payment-requisition': typeof PaymentRequisitionRoute
+  '/auth/crm-callback': typeof AuthCrmCallbackRoute
 }
 export interface FileRoutesByTo {
   '/': typeof IndexRoute
+  '/payment-requisition': typeof PaymentRequisitionRoute
+  '/auth/crm-callback': typeof AuthCrmCallbackRoute
 }
 export interface FileRoutesById {
   __root__: typeof rootRouteImport
   '/': typeof IndexRoute
+  '/payment-requisition': typeof PaymentRequisitionRoute
+  '/auth/crm-callback': typeof AuthCrmCallbackRoute
 }
 export interface FileRouteTypes {
   fileRoutesByFullPath: FileRoutesByFullPath
-  fullPaths: '/'
+  fullPaths: '/' | '/payment-requisition' | '/auth/crm-callback'
   fileRoutesByTo: FileRoutesByTo
-  to: '/'
-  id: '__root__' | '/'
+  to: '/' | '/payment-requisition' | '/auth/crm-callback'
+  id: '__root__' | '/' | '/payment-requisition' | '/auth/crm-callback'
   fileRoutesById: FileRoutesById
 }
 export interface RootRouteChildren {
   IndexRoute: typeof IndexRoute
+  PaymentRequisitionRoute: typeof PaymentRequisitionRoute
+  AuthCrmCallbackRoute: typeof AuthCrmCallbackRoute
 }
 
 declare module '@tanstack/react-router' {
@@ -48,11 +68,27 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof IndexRouteImport
       parentRoute: typeof rootRouteImport
     }
+    '/payment-requisition': {
+      id: '/payment-requisition'
+      path: '/payment-requisition'
+      fullPath: '/payment-requisition'
+      preLoaderRoute: typeof PaymentRequisitionRouteImport
+      parentRoute: typeof rootRouteImport
+    }
+    '/auth/crm-callback': {
+      id: '/auth/crm-callback'
+      path: '/auth/crm-callback'
+      fullPath: '/auth/crm-callback'
+      preLoaderRoute: typeof AuthCrmCallbackRouteImport
+      parentRoute: typeof rootRouteImport
+    }
   }
 }
 
 const rootRouteChildren: RootRouteChildren = {
   IndexRoute: IndexRoute,
+  PaymentRequisitionRoute: PaymentRequisitionRoute,
+  AuthCrmCallbackRoute: AuthCrmCallbackRoute,
 }
 export const routeTree = rootRouteImport
   ._addFileChildren(rootRouteChildren)
