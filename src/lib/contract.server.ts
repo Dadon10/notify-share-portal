@@ -316,7 +316,12 @@ export async function createContractDocument(input: {
     kind: "contract",
   });
   if (!notification.sent)
-    recordDocumentActivity(documentId, "notification_failed", notification.reason, input.ownerId);
+    recordDocumentActivity(
+      documentId,
+      notification.queued ? "notification_delayed" : "notification_failed",
+      notification.reason,
+      input.ownerId,
+    );
   return { id: documentId };
 }
 
@@ -495,7 +500,12 @@ async function notifyAfterStep(
       kind: next.step_role === "notary" ? "notarization" : "contract",
     });
     if (!notification.sent)
-      recordDocumentActivity(documentId, "notification_failed", notification.reason, actorId);
+      recordDocumentActivity(
+        documentId,
+        notification.queued ? "notification_delayed" : "notification_failed",
+        notification.reason,
+        actorId,
+      );
     return;
   }
   const results = await Promise.all(
@@ -511,7 +521,12 @@ async function notifyAfterStep(
   );
   for (const result of results)
     if (!result.sent)
-      recordDocumentActivity(documentId, "notification_failed", result.reason, actorId);
+      recordDocumentActivity(
+        documentId,
+        result.queued ? "notification_delayed" : "notification_failed",
+        result.reason,
+        actorId,
+      );
 }
 
 /** Applies the signer's saved signature to every place marked for them and moves the contract to the next step. */

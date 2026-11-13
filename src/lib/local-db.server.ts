@@ -764,7 +764,7 @@ export async function createPortalDocument(input: {
     throw error;
   }
   const notification = await sendDocumentApprovalEmail({ email: firstApprover.email, fullName: firstApprover.full_name, documentTitle: document.title, documentId: document.id });
-  if (!notification.sent) recordDocumentActivity(document.id, "notification_failed", notification.reason, input.ownerId);
+  if (!notification.sent) recordDocumentActivity(document.id, notification.queued ? "notification_delayed" : "notification_failed", notification.reason, input.ownerId);
   return { ...document, generatedFields: generated?.fields ?? null };
 }
 
@@ -871,7 +871,7 @@ export async function updatePortalDocument(input: {
       documentTitle: title,
       documentId: input.id,
     });
-    if (!notification.sent) recordDocumentActivity(input.id, "notification_failed", notification.reason, input.actorId);
+    if (!notification.sent) recordDocumentActivity(input.id, notification.queued ? "notification_delayed" : "notification_failed", notification.reason, input.actorId);
   }
   return true;
 }
@@ -943,7 +943,7 @@ export async function updateDocumentStatus(id: string, status: "rejected", appro
   }
   if (ownerNotification?.email) {
     const notification = await sendDocumentRejectedEmail({ email: ownerNotification.email, fullName: ownerNotification.full_name, documentTitle: ownerNotification.title, documentId: id, reason: normalizedComment, kind: isContractDocument(id) ? "contract" : "requisition" });
-    if (!notification.sent) recordDocumentActivity(id, "notification_failed", notification.reason, approverId);
+    if (!notification.sent) recordDocumentActivity(id, notification.queued ? "notification_delayed" : "notification_failed", notification.reason, approverId);
   }
 }
 
@@ -1055,7 +1055,7 @@ export async function signPortalDocument(input: {
   }
   if (nextApprover) {
     const notification = await sendDocumentApprovalEmail({ email: nextApprover.email, fullName: nextApprover.full_name, documentTitle: requisitionWord?.file_name ?? "Payment requisition", documentId: input.documentId });
-    if (!notification.sent) recordDocumentActivity(input.documentId, "notification_failed", notification.reason, input.signerId);
+    if (!notification.sent) recordDocumentActivity(input.documentId, notification.queued ? "notification_delayed" : "notification_failed", notification.reason, input.signerId);
   } else {
     const notifications = await Promise.all(completedRecipients.map((recipient) =>
       sendDocumentCompletedEmail({
@@ -1066,7 +1066,7 @@ export async function signPortalDocument(input: {
       }),
     ));
     for (const notification of notifications) {
-      if (!notification.sent) recordDocumentActivity(input.documentId, "notification_failed", notification.reason, input.signerId);
+      if (!notification.sent) recordDocumentActivity(input.documentId, notification.queued ? "notification_delayed" : "notification_failed", notification.reason, input.signerId);
     }
   }
   return { id: signatureId, signedAt };
