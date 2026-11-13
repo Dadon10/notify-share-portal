@@ -6,3 +6,4 @@
 - [ ] Activate submission/status/due-date emails after the company sender domain is connected
 - [x] Add document upload, selected approvers, review controls, and workspace navigation
 - [x] Validate the main workflow on desktop and mobile
+- [x] Contracts: signature places marked on the PDF, ordered signing, optional in-portal notarization

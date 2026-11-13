@@ -5,8 +5,8 @@ import { sendApproverWelcomeEmail, sendDocumentApprovalEmail, sendDocumentComple
 import { addSignatureToRequisition, appendInvoiceToRequisitionPdf, buildPaymentRequisition, convertRequisitionDocxToPdf, prepareSignatureImage, type InvoiceOverrides } from "./invoice-pr.server";
 
 const databasePath = join(process.cwd(), "data", "portal.sqlite");
-const uploadDirectory = join(process.cwd(), "data", "uploads");
-const signatureDirectory = join(process.cwd(), "data", "signatures");
+export const uploadDirectory = join(process.cwd(), "data", "uploads");
+export const signatureDirectory = join(process.cwd(), "data", "signatures");
 mkdirSync(dirname(databasePath), { recursive: true });
 mkdirSync(uploadDirectory, { recursive: true });
 mkdirSync(signatureDirectory, { recursive: true });
@@ -90,6 +90,32 @@ database.exec(`
     source_file TEXT NOT NULL,
     extraction_warnings TEXT NOT NULL DEFAULT '[]'
   );
+  CREATE TABLE IF NOT EXISTS contract_details (
+    document_id TEXT PRIMARY KEY REFERENCES documents(id) ON DELETE CASCADE,
+    original_attachment_id TEXT NOT NULL,
+    working_attachment_id TEXT NOT NULL,
+    page_count INTEGER NOT NULL,
+    notarize INTEGER NOT NULL DEFAULT 0 CHECK (notarize IN (0,1)),
+    notary_id TEXT,
+    original_sha256 TEXT NOT NULL,
+    final_sha256 TEXT,
+    notarized_at TEXT,
+    notarial_act TEXT,
+    notarization_details TEXT NOT NULL DEFAULT '{}'
+  );
+  CREATE TABLE IF NOT EXISTS contract_fields (
+    id TEXT PRIMARY KEY,
+    document_id TEXT NOT NULL REFERENCES documents(id) ON DELETE CASCADE,
+    signer_id TEXT NOT NULL,
+    kind TEXT NOT NULL CHECK (kind IN ('signature','initials','date','name')),
+    page_index INTEGER NOT NULL,
+    x REAL NOT NULL,
+    y REAL NOT NULL,
+    width REAL NOT NULL,
+    height REAL NOT NULL,
+    completed_at TEXT
+  );
+  CREATE INDEX IF NOT EXISTS contract_fields_document ON contract_fields(document_id, signer_id);
 `);
 
 function ensureProfileSchema() {
@@ -99,6 +125,15 @@ function ensureProfileSchema() {
   }
   if (!columns.some((column) => column.name === "finance_role")) {
     database.exec("ALTER TABLE profiles ADD COLUMN finance_role TEXT NOT NULL DEFAULT ''");
+  }
+  // Notaries are ordinary CRM profiles with a commission on file; they can be asked to notarize contracts.
+  if (!columns.some((column) => column.name === "is_notary")) {
+    database.exec("ALTER TABLE profiles ADD COLUMN is_notary INTEGER NOT NULL DEFAULT 0");
+  }
+  for (const column of ["notary_commission", "notary_jurisdiction", "notary_commission_expires"]) {
+    if (!columns.some((existing) => existing.name === column)) {
+      database.exec(`ALTER TABLE profiles ADD COLUMN ${column} TEXT NOT NULL DEFAULT ''`);
+    }
   }
 }
 
@@ -141,6 +176,10 @@ function ensureApprovalSchema() {
 }
 
 ensureApprovalSchema();
+// '' for requisition approvers, 'signer' or 'notary' for contract steps.
+if (!(database.prepare("PRAGMA table_info(document_approvals)").all() as { name: string }[]).some((column) => column.name === "step_role")) {
+  database.exec("ALTER TABLE document_approvals ADD COLUMN step_role TEXT NOT NULL DEFAULT ''");
+}
 database.exec(`
   UPDATE document_approvals
   SET status = 'waiting'
@@ -214,6 +253,7 @@ export type PortalDocument = {
   created_at: string;
   worked_at: string;
   owner_id: string;
+  is_contract?: boolean;
   approver_ids?: string[];
   active_approver_id?: string | null;
   approval_steps?: {
@@ -235,6 +275,10 @@ export type PortalProfile = {
   finance_role: "" | "preparer" | "approver";
   is_admin: boolean;
   has_signature?: boolean;
+  is_notary: boolean;
+  notary_commission: string;
+  notary_jurisdiction: string;
+  notary_commission_expires: string;
 };
 
 export type CrmIdentity = {
@@ -284,7 +328,8 @@ export function getPortalData(currentUserId: string, isAdmin: boolean) {
               ) activity),
               d.created_at
             ) AS worked_at,
-            d.owner_id
+            d.owner_id,
+            EXISTS (SELECT 1 FROM contract_details c WHERE c.document_id = d.id) AS is_contract
      FROM documents d
      -- Everyone in the approval chain can view the document at every stage (before their turn,
      -- after signing, after rejecting). Signing and rejecting are still restricted to the active step.
@@ -298,28 +343,33 @@ export function getPortalData(currentUserId: string, isAdmin: boolean) {
      ORDER BY d.created_at DESC`,
   ).all(currentUserId, currentUserId, currentUserId, isAdmin ? 1 : 0, currentUserId, currentUserId) as unknown as PortalDocument[];
   const approvalRows = database.prepare(
-    `SELECT a.document_id, a.approver_id, a.sequence_no, a.status, a.decided_at, p.full_name, p.email
+    `SELECT a.document_id, a.approver_id, a.sequence_no, a.status, a.decided_at, a.step_role, p.full_name, p.email
      FROM document_approvals a JOIN profiles p ON p.id = a.approver_id
      ORDER BY a.document_id, a.sequence_no`,
-  ).all() as { document_id: string; approver_id: string; sequence_no: number; status: string; decided_at: string | null; full_name: string; email: string }[];
+  ).all() as { document_id: string; approver_id: string; sequence_no: number; status: string; decided_at: string | null; step_role: string; full_name: string; email: string }[];
   const approvalsByDocument = new Map<string, typeof approvalRows>();
   for (const approval of approvalRows) {
     approvalsByDocument.set(approval.document_id, [...(approvalsByDocument.get(approval.document_id) ?? []), approval]);
   }
 
   for (const document of documents) {
+    document.is_contract = Boolean(document.is_contract);
     const steps = approvalsByDocument.get(document.id) ?? [];
     document.approver_ids = steps.map((step) => step.approver_id);
     document.active_approver_id = steps.find((step) => step.status === "pending")?.approver_id ?? null;
     const owner = database.prepare("SELECT full_name, email FROM profiles WHERE id = ?").get(document.owner_id) as { full_name: string; email: string } | undefined;
     document.approval_steps = [
-      { approver_id: document.owner_id, full_name: owner?.full_name || owner?.email || document.owner_id, email: owner?.email || "", sequence_no: 0, status: "approved", decided_at: document.created_at, role_label: "Preparer" },
-      ...steps.map(({ document_id: _documentId, ...step }) => step),
+      { approver_id: document.owner_id, full_name: owner?.full_name || owner?.email || document.owner_id, email: owner?.email || "", sequence_no: 0, status: "approved", decided_at: document.created_at, role_label: document.is_contract ? "Sender" : "Preparer" },
+      ...steps.map(({ document_id: _documentId, step_role: stepRole, ...step }) => ({
+        ...step,
+        ...(stepRole === "signer" ? { role_label: "Signer" } : stepRole === "notary" ? { role_label: "Notary" } : {}),
+      })),
     ];
   }
   const profiles = database.prepare(
     `SELECT id, full_name, email, department, finance_role,
        CAST(is_admin AS INTEGER) AS is_admin,
+       CAST(is_notary AS INTEGER) AS is_notary, notary_commission, notary_jurisdiction, notary_commission_expires,
        EXISTS (SELECT 1 FROM user_signatures s WHERE s.user_id = profiles.id) AS has_signature
      FROM profiles ORDER BY full_name`,
   ).all() as unknown as PortalProfile[];
@@ -328,6 +378,7 @@ export function getPortalData(currentUserId: string, isAdmin: boolean) {
     profiles: profiles.map((profile) => ({
       ...profile,
       is_admin: Boolean(profile.is_admin),
+      is_notary: Boolean(profile.is_notary),
       has_signature: Boolean(profile.has_signature),
     })),
   };
@@ -354,8 +405,21 @@ export async function upsertApproverProfile(input: {
   department: string;
   finance_role?: "" | "preparer" | "approver";
   is_admin?: boolean;
+  is_notary?: boolean;
+  notary_commission?: string;
+  notary_jurisdiction?: string;
+  notary_commission_expires?: string;
 }) {
   const fullName = input.full_name.trim();
+  const isNotary = Boolean(input.is_notary);
+  const notaryCommission = isNotary ? (input.notary_commission ?? "").trim() : "";
+  const notaryJurisdiction = isNotary ? (input.notary_jurisdiction ?? "").trim() : "";
+  const notaryExpires = isNotary ? (input.notary_commission_expires ?? "").trim() : "";
+  if (isNotary && !notaryCommission) throw new Error("Enter the notary's commission or registration number.");
+  if (notaryCommission.length > 80 || notaryJurisdiction.length > 100) throw new Error("Notary details are too long.");
+  if (notaryExpires && (!/^\d{4}-\d{2}-\d{2}$/.test(notaryExpires) || Number.isNaN(new Date(`${notaryExpires}T00:00:00Z`).getTime()))) {
+    throw new Error("Choose a valid commission expiry date.");
+  }
   const email = input.email.trim();
   const department = input.department.trim();
   const financeRole = input.finance_role ?? "";
@@ -366,15 +430,19 @@ export async function upsertApproverProfile(input: {
   database.exec("BEGIN");
   try {
     database.prepare(
-      `INSERT INTO profiles (id, full_name, email, department, finance_role, is_admin)
-       VALUES (?, ?, ?, ?, ?, ?)
+      `INSERT INTO profiles (id, full_name, email, department, finance_role, is_admin, is_notary, notary_commission, notary_jurisdiction, notary_commission_expires)
+       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
        ON CONFLICT(id) DO UPDATE SET
          full_name = excluded.full_name,
          email = excluded.email,
          department = excluded.department,
          finance_role = excluded.finance_role,
-         is_admin = excluded.is_admin`,
-    ).run(profileId, fullName, email, department, financeRole, input.is_admin ? 1 : 0);
+         is_admin = excluded.is_admin,
+         is_notary = excluded.is_notary,
+         notary_commission = excluded.notary_commission,
+         notary_jurisdiction = excluded.notary_jurisdiction,
+         notary_commission_expires = excluded.notary_commission_expires`,
+    ).run(profileId, fullName, email, department, financeRole, input.is_admin ? 1 : 0, isNotary ? 1 : 0, notaryCommission, notaryJurisdiction, notaryExpires);
     database.exec("COMMIT");
   } catch (error) {
     database.exec("ROLLBACK");
@@ -399,6 +467,7 @@ export async function upsertApproverProfile(input: {
     department,
     finance_role: financeRole,
     is_admin: Boolean(input.is_admin),
+    is_notary: isNotary,
     email_notification: notification,
   };
 }
@@ -420,7 +489,7 @@ export function recordDocumentActivity(documentId: string, action: string, detai
   return true;
 }
 
-function assertDocumentVisible(documentId: string, currentUserId: string, isAdmin: boolean) {
+export function assertDocumentVisible(documentId: string, currentUserId: string, isAdmin: boolean) {
   const document = database.prepare("SELECT owner_id FROM documents WHERE id = ?").get(documentId) as { owner_id: string } | undefined;
   if (!document) throw new Error("The requested document could not be found.");
   if (isAdmin || document.owner_id === currentUserId) return;
@@ -432,7 +501,7 @@ function assertDocumentVisible(documentId: string, currentUserId: string, isAdmi
   const signedByCurrentUser = database.prepare(
     "SELECT 1 FROM document_signatures WHERE document_id = ? AND signer_id = ? LIMIT 1",
   ).get(documentId, currentUserId);
-  if (!signedByCurrentUser) throw new Error("You are not part of this requisition’s approval chain.");
+  if (!signedByCurrentUser) throw new Error("You are not part of this document’s approval chain.");
 }
 
 export function getDocumentActivity(documentId: string, currentUserId: string, isAdmin: boolean) {
@@ -455,6 +524,15 @@ export function getDocumentActivity(documentId: string, currentUserId: string, i
 
 export function getDocumentFile(documentId: string, mode: "preview" | "download", currentUserId: string, isAdmin: boolean) {
   assertDocumentVisible(documentId, currentUserId, isAdmin);
+  // Contracts always show the copy that carries every signature applied so far.
+  const contractCopy = database.prepare(
+    `SELECT a.file_name, a.mime_type, a.storage_path
+     FROM contract_details c JOIN document_attachments a ON a.id = c.working_attachment_id
+     WHERE c.document_id = ?`,
+  ).get(documentId) as { file_name: string; mime_type: string; storage_path: string } | undefined;
+  if (contractCopy) {
+    return { fileName: contractCopy.file_name, mimeType: contractCopy.mime_type, fileData: readFileSync(contractCopy.storage_path).toString("base64") };
+  }
   const attachments = database.prepare(
     "SELECT file_name, mime_type, storage_path FROM document_attachments WHERE document_id = ? ORDER BY created_at DESC",
   ).all(documentId) as { file_name: string; mime_type: string; storage_path: string }[];
@@ -569,6 +647,7 @@ export async function createPortalDocument(input: {
   manualEntry?: boolean | undefined;
   ownerId: string;
 }) {
+  if (input.category === "Contracts") throw new Error("Contracts are submitted from the New contract page so signature places can be marked.");
   const approverIds = [...new Set((input.approverIds?.length ? input.approverIds : input.approverId ? [input.approverId] : []).map((id) => id.trim()).filter(Boolean))];
   if (!approverIds.length) throw new Error("No approvers are configured for this category.");
   const approverProfiles = approverIds.map((id) => {
@@ -733,12 +812,26 @@ export async function updatePortalDocument(input: {
     }
   }
   const cleanedApproverIds = [...new Set(input.approverIds.map((id) => id.trim()).filter(Boolean))];
-  if (!cleanedApproverIds.length) throw new Error("Add at least one approver to the approval order.");
-  if (cleanedApproverIds.includes(input.actorId)) throw new Error("You cannot add yourself to the approval order.");
 
   const document = database.prepare("SELECT owner_id, status FROM documents WHERE id = ?").get(input.id) as { owner_id: string; status: string } | undefined;
   if (!document) throw new Error("The requested document could not be found.");
   if (!input.isAdmin && document.owner_id !== input.actorId) throw new Error("Only the document owner or an administrator can edit this document.");
+  if (isContractDocument(input.id)) {
+    // Signers, signature places and notarization are fixed once a contract is sent; only its details can change.
+    const actor = database.prepare("SELECT full_name FROM profiles WHERE id = ?").get(input.actorId) as { full_name: string } | undefined;
+    database.exec("BEGIN");
+    try {
+      database.prepare("UPDATE documents SET title = ?, department = ?, due_date = ? WHERE id = ?").run(title, department, input.dueDate || null, input.id);
+      recordDocumentActivity(input.id, "document_edited", `${actor?.full_name || input.actorId} updated contract details.`, input.actorId);
+      database.exec("COMMIT");
+    } catch (error) {
+      database.exec("ROLLBACK");
+      throw error;
+    }
+    return true;
+  }
+  if (!cleanedApproverIds.length) throw new Error("Add at least one approver to the approval order.");
+  if (cleanedApproverIds.includes(input.actorId)) throw new Error("You cannot add yourself to the approval order.");
 
   const approverProfiles = cleanedApproverIds.map((id) => {
     const profile = database.prepare("SELECT id, full_name, email FROM profiles WHERE id = ? AND finance_role = ''").get(id) as { id: string; full_name: string; email: string } | undefined;
@@ -812,6 +905,8 @@ export function deletePortalDocument(documentId: string, actorId: string, isAdmi
     database.prepare("DELETE FROM document_signatures WHERE document_id = ?").run(documentId);
     database.prepare("DELETE FROM document_attachments WHERE document_id = ?").run(documentId);
     database.prepare("DELETE FROM invoice_metadata WHERE document_id = ?").run(documentId);
+    database.prepare("DELETE FROM contract_fields WHERE document_id = ?").run(documentId);
+    database.prepare("DELETE FROM contract_details WHERE document_id = ?").run(documentId);
     database.prepare("DELETE FROM documents WHERE id = ?").run(documentId);
     database.exec("COMMIT");
   } catch (error) {
@@ -830,6 +925,10 @@ export function deletePortalDocument(documentId: string, actorId: string, isAdmi
   return true;
 }
 
+export function isContractDocument(documentId: string) {
+  return Boolean(database.prepare("SELECT 1 FROM contract_details WHERE document_id = ?").get(documentId));
+}
+
 function isPendingDocument(status: string) {
   return status === "pending_review" || status.startsWith("Pending ");
 }
@@ -838,7 +937,7 @@ export async function updateDocumentStatus(id: string, status: "rejected", appro
   const resolvedApproverId = approverId;
   if (!id || !status) throw new Error("A document and decision are required.");
   const normalizedComment = (comment ?? "").trim();
-  if (status === "rejected" && !normalizedComment) throw new Error("Add a reason before rejecting this requisition.");
+  if (status === "rejected" && !normalizedComment) throw new Error("Add a reason before rejecting this document.");
   let ownerNotification: { email: string; full_name: string; title: string } | undefined;
   database.exec("BEGIN");
   try {
@@ -852,14 +951,14 @@ export async function updateDocumentStatus(id: string, status: "rejected", appro
       "SELECT p.email, p.full_name, d.title FROM documents d JOIN profiles p ON p.id = d.owner_id WHERE d.id = ?",
     ).get(id) as { email: string; full_name: string; title: string } | undefined;
     const actor = database.prepare("SELECT full_name FROM profiles WHERE id = ?").get(resolvedApproverId) as { full_name: string } | undefined;
-    recordDocumentActivity(id, status, `${actor?.full_name || resolvedApproverId} rejected the requisition: ${normalizedComment}`, resolvedApproverId);
+    recordDocumentActivity(id, status, `${actor?.full_name || resolvedApproverId} rejected the ${isContractDocument(id) ? "contract" : "requisition"}: ${normalizedComment}`, resolvedApproverId);
     database.exec("COMMIT");
   } catch (error) {
     database.exec("ROLLBACK");
     throw error;
   }
   if (ownerNotification?.email) {
-    const notification = await sendDocumentRejectedEmail({ email: ownerNotification.email, fullName: ownerNotification.full_name, documentTitle: ownerNotification.title, documentId: id, reason: normalizedComment });
+    const notification = await sendDocumentRejectedEmail({ email: ownerNotification.email, fullName: ownerNotification.full_name, documentTitle: ownerNotification.title, documentId: id, reason: normalizedComment, kind: isContractDocument(id) ? "contract" : "requisition" });
     if (!notification.sent) recordDocumentActivity(id, "notification_failed", notification.reason, approverId);
   }
 }
@@ -871,6 +970,7 @@ export async function signPortalDocument(input: {
   mimeType: string;
   fileData: string;
 }) {
+  if (isContractDocument(input.documentId)) throw new Error("Contracts are signed through the contract signing flow.");
   const fileBytes = Buffer.from(input.fileData, "base64");
   if (!/^image\/(png|jpeg)$/.test(input.mimeType)) {
     throw new Error("Signature must be a PNG or JPEG image.");

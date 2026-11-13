@@ -54,6 +54,7 @@ const categories = {
   Legal: ["Agreement", "Legal opinion", "Contract review"],
   Compliance: ["Policy", "Audit evidence", "Risk assessment"],
   Operations: ["Service request", "Incident report", "Project document"],
+  Contracts: ["Contract"],
   Custom: ["Custom document"],
 };
 const CRM_SIGN_IN_REQUIRED_MESSAGE =
@@ -260,6 +261,11 @@ function PaymentRequisitionForm({ user, profiles }: { user: LocalUser; profiles:
     };
   }, [financeApprovers, financePreparers, user.id]);
   function changeCategory(value: keyof typeof categories) {
+    // Contracts need signature places marked on the PDF, which happens on the contract page.
+    if (value === "Contracts") {
+      void navigate({ to: "/contract" });
+      return;
+    }
     setCategory(value);
   }
   async function encodeFile(file: File) {

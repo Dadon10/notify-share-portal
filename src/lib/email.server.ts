@@ -12,7 +12,39 @@ type DocumentNotificationInput = {
   fullName: string;
   documentTitle: string;
   documentId: string;
+  /** What the email is about; defaults to a payment requisition. */
+  kind?: "requisition" | "contract" | "notarization";
 };
+
+const NOTIFICATION_WORDING = {
+  requisition: {
+    noun: "requisition",
+    readySubject: "Approval required",
+    ready: "A requisition is ready for your approval",
+    readyAction: "Preview requisition",
+    readyHint: "Preview the requisition before choosing to approve and sign or reject it.",
+    doneSubject: "Requisition approved",
+    done: "The requisition has been approved",
+  },
+  contract: {
+    noun: "contract",
+    readySubject: "Signature required",
+    ready: "A contract is ready for your signature",
+    readyAction: "Review and sign",
+    readyHint: "Review the contract and the places marked for you before signing or rejecting it.",
+    doneSubject: "Contract completed",
+    done: "Every party has signed the contract",
+  },
+  notarization: {
+    noun: "contract",
+    readySubject: "Notarization required",
+    ready: "A signed contract is ready for you to notarize",
+    readyAction: "Review and notarize",
+    readyHint: "Confirm the signers' identities and review the contract before notarizing or rejecting it.",
+    doneSubject: "Contract notarized",
+    done: "The contract has been signed and notarized",
+  },
+} as const;
 
 type RejectionNotificationInput = DocumentNotificationInput & { reason: string };
 
@@ -126,15 +158,16 @@ async function sendDocumentNotification(input: DocumentNotificationInput, comple
   const baseUrl = process.env["PORTAL_BASE_URL"] || process.env["APP_BASE_URL"] || "http://localhost:3000/document-hub";
   const link = new URL(baseUrl);
   link.searchParams.set("documentId", input.documentId);
-  const subject = completed ? `Requisition approved: ${input.documentTitle}` : `Approval required: ${input.documentTitle}`;
-  const heading = completed ? "The requisition has been approved" : "A requisition is ready for your approval";
+  const wording = NOTIFICATION_WORDING[input.kind ?? "requisition"];
+  const subject = completed ? `${wording.doneSubject}: ${input.documentTitle}` : `${wording.readySubject}: ${input.documentTitle}`;
+  const heading = completed ? wording.done : wording.ready;
   const greeting = input.fullName ? `Hello ${input.fullName},` : "Hello,";
-  const action = completed ? "Open requisition" : "Preview requisition";
-  const instruction = completed ? "" : "\nPreview the requisition before choosing to approve and sign or reject it.";
+  const action = completed ? `Open ${wording.noun}` : wording.readyAction;
+  const instruction = completed ? "" : `\n${wording.readyHint}`;
   const text = `${greeting}\n\n${heading}: ${input.documentTitle}${instruction}\n\n${action}: ${link.toString()}\n\nSanlam Document Hub`;
   const safeTitle = input.documentTitle.replace(/[&<>"']/g, (character) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" })[character] || character);
   const safeLink = link.toString().replace(/&/g, "&amp;").replace(/"/g, "&quot;");
-  const html = `<div style="font-family:Arial,sans-serif;color:#1f2937;line-height:1.6"><p>${greeting}</p><p>${heading}: <strong>${safeTitle}</strong></p>${completed ? "" : "<p>Please preview the requisition before choosing to approve and sign or reject it.</p>"}<p style="margin:24px 0"><a href="${safeLink}" style="display:inline-block;padding:12px 20px;background:#153b72;color:#fff;text-decoration:none;border-radius:6px;font-weight:bold">${action}</a></p><p>Sanlam Document Hub</p></div>`;
+  const html = `<div style="font-family:Arial,sans-serif;color:#1f2937;line-height:1.6"><p>${greeting}</p><p>${heading}: <strong>${safeTitle}</strong></p>${completed ? "" : `<p>${wording.readyHint}</p>`}<p style="margin:24px 0"><a href="${safeLink}" style="display:inline-block;padding:12px 20px;background:#153b72;color:#fff;text-decoration:none;border-radius:6px;font-weight:bold">${action}</a></p><p>Sanlam Document Hub</p></div>`;
   const transporter = nodemailer.createTransport({
     host: config.host,
     port: config.port,
@@ -167,11 +200,12 @@ export async function sendDocumentRejectedEmail(input: RejectionNotificationInpu
   const link = new URL(baseUrl);
   link.searchParams.set("documentId", input.documentId);
   const greeting = input.fullName ? `Hello ${input.fullName},` : "Hello,";
-  const subject = `Requisition rejected: ${input.documentTitle}`;
-  const text = `${greeting}\n\nYour requisition was rejected: ${input.documentTitle}\nReason: ${input.reason}\n\nOpen the requisition: ${link.toString()}\n\nSanlam Document Hub`;
+  const noun = input.kind === "contract" ? "contract" : "requisition";
+  const subject = `${noun === "contract" ? "Contract" : "Requisition"} rejected: ${input.documentTitle}`;
+  const text = `${greeting}\n\nYour ${noun} was rejected: ${input.documentTitle}\nReason: ${input.reason}\n\nOpen the ${noun}: ${link.toString()}\n\nSanlam Document Hub`;
   const escapeHtml = (value: string) => value.replace(/[&<>"']/g, (character) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" })[character] || character);
   const safeLink = link.toString().replace(/&/g, "&amp;").replace(/"/g, "&quot;");
-  const html = `<p>${escapeHtml(greeting)}</p><p>Your requisition was rejected: <strong>${escapeHtml(input.documentTitle)}</strong></p><p><strong>Reason:</strong> ${escapeHtml(input.reason)}</p><p><a href="${safeLink}">Open requisition</a></p><p>Sanlam Document Hub</p>`;
+  const html = `<p>${escapeHtml(greeting)}</p><p>Your ${noun} was rejected: <strong>${escapeHtml(input.documentTitle)}</strong></p><p><strong>Reason:</strong> ${escapeHtml(input.reason)}</p><p><a href="${safeLink}">Open ${noun}</a></p><p>Sanlam Document Hub</p>`;
   const transporter = nodemailer.createTransport({
     host: config.host,
     port: config.port,

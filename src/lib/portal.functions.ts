@@ -26,6 +26,8 @@ import {
   rememberSupplier,
   type AutofillSnapshot,
 } from "./autofill-memory.server";
+import { createContractDocument, getContractOriginal, getContractSummary, notarizeContract, signContract } from "./contract.server";
+import type { ContractFieldInput } from "./contract-types";
 
 export const suggestInvoiceFieldsFn = createServerFn({ method: "POST" })
   .validator((input: { fileName: string; fileData: string }) => input)
@@ -192,8 +194,66 @@ export const signDocumentFn = createServerFn({ method: "POST" })
     return signPortalDocument({ ...data, signerId: currentUser.id });
   });
 
+export const createContractFn = createServerFn({ method: "POST" })
+  .validator((input: {
+    title: string;
+    documentType: string;
+    department: string;
+    dueDate: string | null;
+    fileName: string;
+    fileData: string;
+    signerIds: string[];
+    fields: ContractFieldInput[];
+    notarize: boolean;
+    notaryId: string | null;
+  }) => input)
+  .handler(({ data }) => {
+    const currentUser = getCurrentCrmIdentity();
+    upsertCrmProfile(currentUser);
+    return createContractDocument({ ...data, ownerId: currentUser.id });
+  });
+
+export const getContractFn = createServerFn({ method: "GET" })
+  .validator((input: { documentId: string }) => input)
+  .handler(({ data }) => {
+    const currentUser = getCurrentCrmIdentity();
+    return getContractSummary(data.documentId, currentUser.id, currentUser.role.toLowerCase() === "admin");
+  });
+
+export const getContractOriginalFn = createServerFn({ method: "GET" })
+  .validator((input: { documentId: string }) => input)
+  .handler(({ data }) => {
+    const currentUser = getCurrentCrmIdentity();
+    return getContractOriginal(data.documentId, currentUser.id, currentUser.role.toLowerCase() === "admin");
+  });
+
+export const signContractFn = createServerFn({ method: "POST" })
+  .validator((input: { documentId: string; mimeType: string; fileData: string }) => input)
+  .handler(({ data }) => {
+    const currentUser = getCurrentCrmIdentity();
+    return signContract({ ...data, signerId: currentUser.id });
+  });
+
+export const notarizeContractFn = createServerFn({ method: "POST" })
+  .validator((input: { documentId: string; act: string; venue: string; idMethod: string; notes: string; identityConfirmed: boolean }) => input)
+  .handler(({ data }) => {
+    const currentUser = getCurrentCrmIdentity();
+    return notarizeContract({ ...data, notaryId: currentUser.id });
+  });
+
 export const upsertApproverProfileFn = createServerFn({ method: "POST" })
-  .validator((input: { id?: string; full_name: string; email: string; department: string; finance_role?: "" | "preparer" | "approver"; is_admin?: boolean }) => input)
+  .validator((input: {
+    id?: string;
+    full_name: string;
+    email: string;
+    department: string;
+    finance_role?: "" | "preparer" | "approver";
+    is_admin?: boolean;
+    is_notary?: boolean;
+    notary_commission?: string;
+    notary_jurisdiction?: string;
+    notary_commission_expires?: string;
+  }) => input)
   .handler(({ data }) => {
     const currentUser = getCurrentCrmIdentity();
     if (currentUser.role.toLowerCase() !== "admin") throw new Error("Only CRM administrators can manage approvers.");

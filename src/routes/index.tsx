@@ -1,7 +1,7 @@
 import { createFileRoute, useNavigate } from "@tanstack/react-router";
 import { useEffect, useMemo, useRef, useState, type ChangeEvent, type FormEvent } from "react";
 import {
-  Bell, Check, CheckCircle2, ChevronDown, Clock3, FileCheck2, FilePlus2,
+  Bell, Check, CheckCircle2, ChevronDown, Clock3, FileCheck2, FilePlus2, FileSignature,
   Files, FolderOpen, LayoutDashboard, Menu, PenLine, Pencil, Search, Settings, ArrowDown, ArrowUp,
   ShieldCheck, Trash2, UploadCloud, Users, X, XCircle,
 } from "lucide-react";
@@ -29,16 +29,19 @@ import {
   updateDocumentStatusFn,
   updatePortalDocumentFn,
 } from "@/lib/portal.functions";
+import { CONTRACT_DOCUMENT_TYPES } from "@/lib/contract-types";
+import { ContractDownloadButton, ContractInfoPanel, ContractReviewCard } from "@/components/contract/ContractPanels";
 
 type DocStatus = string;
 type PortalDocument = {
   id: string; title: string; document_type: string; category: string; department: string;
   status: DocStatus; due_date: string | null; created_at: string; worked_at: string; owner_id: string;
+  is_contract?: boolean;
   approver_ids?: string[];
   active_approver_id?: string | null;
   approval_steps?: { approver_id: string; full_name: string; email: string; sequence_no: number; status: string; decided_at: string | null; role_label?: string }[];
 };
-type Profile = { id: string; full_name: string; email: string; department: string; finance_role: "" | "preparer" | "approver"; is_admin: boolean; role?: string };
+type Profile = { id: string; full_name: string; email: string; department: string; finance_role: "" | "preparer" | "approver"; is_admin: boolean; role?: string; is_notary?: boolean; notary_commission?: string; notary_jurisdiction?: string; notary_commission_expires?: string };
 type LocalUser = { id: string; full_name?: string };
 type PortalRole = "admin" | "approver" | "submitter";
 type ManualInvoiceFields = { invoiceNumber: string; invoiceDate: string; billingPeriod: string; accountId: string; payee: string; amount: string; currency: string; expenditureItem: string; budgeted: "Y" | "N"; businessMotivation: string; paymentPurpose: string };
@@ -61,6 +64,7 @@ const categories = {
   Legal: ["Agreement", "Legal opinion", "Contract review"],
   Compliance: ["Policy", "Audit evidence", "Risk assessment"],
   Operations: ["Service request", "Incident report", "Project document"],
+  Contracts: [...CONTRACT_DOCUMENT_TYPES] as string[],
   Custom: ["Custom document"],
 };
 
@@ -244,6 +248,14 @@ function Portal() {
           <div className="relative max-w-xl flex-1"><Search className="absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-muted-foreground"/><Input value={search} onChange={(e)=>setSearch(e.target.value)} placeholder="Search documents, people or reference…" className="h-11 bg-muted/60 pl-10 shadow-none" /></div>
           <Button variant="ghost" size="icon" aria-label="Notifications"><Bell /></Button>
           <Button
+            variant="outline"
+            className="hidden sm:inline-flex"
+            onClick={() => void navigate({ to: "/contract" })}
+          >
+            <FileSignature />
+            New contract
+          </Button>
+          <Button
             variant="default"
             className="hidden sm:inline-flex"
             onClick={() => void navigate({ to: "/payment-requisition" })}
@@ -259,6 +271,15 @@ function Portal() {
             aria-label="New document"
           >
             <FilePlus2 />
+          </Button>
+          <Button
+            variant="outline"
+            size="icon"
+            className="sm:hidden"
+            onClick={() => void navigate({ to: "/contract" })}
+            aria-label="New contract"
+          >
+            <FileSignature />
           </Button>
         </header>
 
@@ -295,6 +316,14 @@ function Portal() {
                 >
                   Start submission
                 </Button>
+                <button
+                  type="button"
+                  className="mt-3 inline-flex w-full items-center justify-center gap-2 text-sm font-semibold opacity-90 hover:underline"
+                  onClick={() => void navigate({ to: "/contract" })}
+                >
+                  <FileSignature className="h-4 w-4" />
+                  Send a contract for signature
+                </button>
               </div>
               <div className="rounded-lg border bg-card p-5">
                 <div className="flex items-center justify-between"><h2 className="font-bold">Review queue</h2><span className="text-xs font-semibold text-primary">{counts.pending} OPEN</span></div>
@@ -350,7 +379,7 @@ function DocumentWorkspace({active,documents,profiles,currentUserId,isAdmin,focu
   const hasDateFilters=Boolean(dateRange);
   const hasFilters=Boolean(search.trim()||hasDateFilters);
   return <div className="mx-auto max-w-[1500px] p-4 md:p-8">
-    <div className="mb-8"><p className="mb-1 text-sm font-semibold text-primary">DOCUMENT CONTROL</p><h1 className="text-3xl font-bold tracking-normal md:text-4xl">{active}</h1><p className="mt-2 text-muted-foreground">{active==="Approvals"?"Preview each requisition before signing or rejecting it.":"Browse and manage your accessible documents."}</p></div>
+    <div className="mb-8"><p className="mb-1 text-sm font-semibold text-primary">DOCUMENT CONTROL</p><h1 className="text-3xl font-bold tracking-normal md:text-4xl">{active}</h1><p className="mt-2 text-muted-foreground">{active==="Approvals"?"Preview each requisition or contract before signing, notarizing or rejecting it.":"Browse and manage your accessible documents."}</p></div>
     {isDocuments&&<div className="mb-6 flex flex-wrap items-end gap-3 rounded-lg border bg-card p-4">
       <DateRangeFilter presetKey={datePreset} value={dateRange} onChange={(range,key)=>{setDateRange(range);setDatePreset(key);}}/>
       <div className="ml-auto text-right"><p className="text-sm font-semibold">{filtered.length} {filtered.length===1?"document":"documents"}</p><p className="text-xs text-muted-foreground">Dated by latest signature/approval, or submission.</p></div>
@@ -359,6 +388,15 @@ function DocumentWorkspace({active,documents,profiles,currentUserId,isAdmin,focu
       {group.label&&<div className="mb-2 flex items-baseline gap-2 px-1"><h2 className="text-sm font-bold uppercase tracking-wide text-foreground">{group.label}</h2><span className="text-xs text-muted-foreground">{group.entries.length} {group.entries.length===1?"document":"documents"}</span></div>}
       <div className="space-y-3">{group.entries.map(({document})=>{
         const expanded=!isDocuments||expandedIds.has(document.id);
+        if(!isDocuments&&document.is_contract){
+          const activeStep=document.approval_steps?.find(step=>step.status==="pending");
+          return <div key={document.id} className="overflow-hidden rounded-lg border bg-card shadow-sm">
+            <div className="flex items-center justify-between gap-3 px-5 pb-3 pt-5"><div className="min-w-0"><h2 className="truncate text-lg font-bold">{document.title}</h2><p className="text-sm text-muted-foreground">{document.document_type} · {document.department||"General"}</p></div><Status status={document.status}/></div>
+            <ContractReviewCard documentId={document.id} status={document.status} currentUserId={currentUserId} role={activeStep?.role_label==="Notary"?"notary":"signer"} onDecision={onDecision} onDone={onSigned}/>
+            <div className="px-5"><ApprovalProgressTracker document={document}/></div>
+            <DocumentActivityTimeline key={`${document.id}:${document.status}`} documentId={document.id}/>
+          </div>;
+        }
         if(!isDocuments)return <div key={document.id} className="overflow-hidden rounded-lg border bg-card shadow-sm">
           <ApprovalReviewCard document={document} onDecision={onDecision} onSigned={onSigned}/>
           <DocumentRow doc={document}/>
@@ -374,15 +412,16 @@ function DocumentWorkspace({active,documents,profiles,currentUserId,isAdmin,focu
             <ChevronDown className={`mr-4 h-5 w-5 shrink-0 text-muted-foreground transition-transform ${expanded?"rotate-180":""}`}/>
           </div>
           {expanded&&<div className="border-t bg-muted/20">
-            <div className="flex flex-wrap items-center gap-2 px-5 pt-4"><DocumentFileButton documentId={document.id}/>{document.status==="approved"&&<SignatureDialog documentId={document.id} onSigned={onSigned} />}{(isAdmin||document.owner_id===currentUserId)&&<EditDocumentDialog document={document} profiles={profiles} onSaved={onSigned} />}{(isAdmin||document.owner_id===currentUserId)&&<DeleteDocumentButton document={document} onDeleted={onSigned}/>}</div>
+            <div className="flex flex-wrap items-center gap-2 px-5 pt-4"><DocumentFileButton documentId={document.id} label={document.is_contract?"Open contract":"Preview PR"}/>{document.is_contract&&<ContractDownloadButton documentId={document.id}/>}{document.status==="approved"&&<SignatureDialog documentId={document.id} onSigned={onSigned} />}{(isAdmin||document.owner_id===currentUserId)&&<EditDocumentDialog document={document} profiles={profiles} onSaved={onSigned} />}{(isAdmin||document.owner_id===currentUserId)&&<DeleteDocumentButton document={document} onDeleted={onSigned}/>}</div>
             <DocumentDetailPanel document={document}/>
+            {document.is_contract&&<ContractInfoPanel documentId={document.id} status={document.status}/>}
             <ApprovalProgressTracker document={document}/>
             <DocumentActivityTimeline key={`${document.id}:${document.status}`} documentId={document.id}/>
           </div>}
         </div>;
       })}</div>
     </section>)}
-    {!filtered.length&&<div className="rounded-lg border bg-card px-6 py-16 text-center"><FolderOpen className="mx-auto mb-3 h-9 w-9 text-muted-foreground"/><p className="font-semibold">{hasFilters?"No documents match these filters":"No documents yet"}</p><p className="mt-1 text-sm text-muted-foreground">{hasFilters?"Try another date range or search term.":active==="Approvals"?"A requisition will appear here when it is your turn.":"Submit a document from the Overview page to get started."}</p>{hasDateFilters&&<Button type="button" variant="outline" size="sm" className="mt-4" onClick={clearDates}>Clear date filters</Button>}</div>}
+    {!filtered.length&&<div className="rounded-lg border bg-card px-6 py-16 text-center"><FolderOpen className="mx-auto mb-3 h-9 w-9 text-muted-foreground"/><p className="font-semibold">{hasFilters?"No documents match these filters":"No documents yet"}</p><p className="mt-1 text-sm text-muted-foreground">{hasFilters?"Try another date range or search term.":active==="Approvals"?"A requisition or contract will appear here when it is your turn.":"Submit a document from the Overview page to get started."}</p>{hasDateFilters&&<Button type="button" variant="outline" size="sm" className="mt-4" onClick={clearDates}>Clear date filters</Button>}</div>}
     </div>
   </div>;
 }
@@ -469,7 +508,7 @@ function EditDocumentDialog({document,profiles,onSaved}:{document:PortalDocument
     } finally {setSaving(false);}
   }
 
-  return <Dialog open={open} onOpenChange={setOpen}><Button type="button" variant="outline" size="sm" onClick={()=>{setError("");setOpen(true);}}><Pencil className="h-4 w-4"/>Edit</Button><DialogContent className="max-h-[92vh] overflow-y-auto sm:max-w-2xl"><DialogHeader><DialogTitle>Edit document</DialogTitle><DialogDescription>Update document details and, before approvals begin, its approval order.</DialogDescription></DialogHeader><form onSubmit={submit} className="grid gap-4 sm:grid-cols-2"><label className="block text-sm font-semibold sm:col-span-2">Document title<Input required maxLength={160} value={title} onChange={event=>setTitle(event.target.value)} className="mt-2 h-11"/></label><label className="block text-sm font-semibold">Category<select value={category} onChange={event=>{const next=event.target.value as keyof typeof categories;setCategory(next);if(!categories[next].includes(documentType))setDocumentType(categories[next][0]??"Custom document");}} className="form-select mt-2">{Object.keys(categories).map(item=><option key={item}>{item}</option>)}</select></label><label className="block text-sm font-semibold">Document type<select value={documentType} onChange={event=>setDocumentType(event.target.value)} className="form-select mt-2">{categories[category].map(item=><option key={item}>{item}</option>)}</select></label><label className="block text-sm font-semibold">Department<Input maxLength={100} value={department} onChange={event=>setDepartment(event.target.value)} className="mt-2 h-11"/></label><label className="block text-sm font-semibold">Due date<Input type="date" value={dueDate} onChange={event=>setDueDate(event.target.value)} className="mt-2 h-11"/></label><section className="space-y-3 sm:col-span-2"><div><h3 className="text-sm font-semibold">Approval order</h3><p className="mt-1 text-xs text-muted-foreground">Finance Approver and Finance Preparer are appended automatically.</p></div>{routingLocked?<p className="rounded-md border bg-muted/30 p-3 text-sm text-muted-foreground">Approval routing is locked because a reviewer has already acted or the document is no longer pending. Document details can still be edited.</p>:<><ol className="space-y-2">{approverIds.map((id,index)=>{const profile=profiles.find(item=>item.id===id);return <li key={`${id}-${index}`} className="flex items-center gap-2 rounded-md border p-2"><span className="min-w-0 flex-1 truncate text-sm">{index+1}. {profile?.full_name||profile?.email||"Unavailable approver"}</span><Button type="button" variant="ghost" size="icon" aria-label={`Move ${profile?.full_name||"approver"} up`} disabled={index===0} onClick={()=>moveApprover(index,-1)}><ArrowUp className="h-4 w-4"/></Button><Button type="button" variant="ghost" size="icon" aria-label={`Move ${profile?.full_name||"approver"} down`} disabled={index===approverIds.length-1} onClick={()=>moveApprover(index,1)}><ArrowDown className="h-4 w-4"/></Button><Button type="button" variant="ghost" size="icon" aria-label={`Remove ${profile?.full_name||"approver"}`} onClick={()=>setApproverIds(current=>current.filter((_,itemIndex)=>itemIndex!==index))}><X className="h-4 w-4"/></Button></li>;})}</ol><div className="flex gap-2"><select aria-label="Add approver" value={candidateId} onChange={event=>setCandidateId(event.target.value)} className="form-select"><option value="">Add approver</option>{availableApprovers.filter(profile=>!approverIds.includes(profile.id)).map(profile=><option key={profile.id} value={profile.id}>{profile.full_name||profile.email}</option>)}</select><Button type="button" variant="outline" disabled={!candidateId} onClick={()=>{if(candidateId&&!approverIds.includes(candidateId))setApproverIds(current=>[...current,candidateId]);setCandidateId("");}}>Add</Button></div><label className="block text-sm font-semibold">Finance Approver<select required value={financeApproverId} onChange={event=>setFinanceApproverId(event.target.value)} className="form-select mt-2"><option value="">Choose Finance Approver</option>{financeApprovers.map(profile=><option key={profile.id} value={profile.id}>{profile.full_name||profile.email}</option>)}</select></label><label className="block text-sm font-semibold">Finance Preparer<select required value={financePreparerId} onChange={event=>setFinancePreparerId(event.target.value)} className="form-select mt-2"><option value="">Choose Finance Preparer</option>{financePreparers.map(profile=><option key={profile.id} value={profile.id}>{profile.full_name||profile.email}</option>)}</select></label></>}</section>{error&&<p role="alert" className="text-sm font-medium text-destructive sm:col-span-2">{error}</p>}<div className="flex justify-end gap-3 sm:col-span-2"><Button type="button" variant="outline" onClick={()=>setOpen(false)}>Cancel</Button><Button type="submit" disabled={saving}>{saving?"Saving…":"Save changes"}</Button></div></form></DialogContent></Dialog>;
+  return <Dialog open={open} onOpenChange={setOpen}><Button type="button" variant="outline" size="sm" onClick={()=>{setError("");setOpen(true);}}><Pencil className="h-4 w-4"/>Edit</Button><DialogContent className="max-h-[92vh] overflow-y-auto sm:max-w-2xl"><DialogHeader><DialogTitle>Edit document</DialogTitle><DialogDescription>{document.is_contract?"Update the contract's details.":"Update document details and, before approvals begin, its approval order."}</DialogDescription></DialogHeader><form onSubmit={submit} className="grid gap-4 sm:grid-cols-2"><label className="block text-sm font-semibold sm:col-span-2">Document title<Input required maxLength={160} value={title} onChange={event=>setTitle(event.target.value)} className="mt-2 h-11"/></label>{document.is_contract?<><label className="block text-sm font-semibold">Department<Input maxLength={100} value={department} onChange={event=>setDepartment(event.target.value)} className="mt-2 h-11"/></label><label className="block text-sm font-semibold">Sign by<Input type="date" value={dueDate} onChange={event=>setDueDate(event.target.value)} className="mt-2 h-11"/></label><p className="rounded-md border bg-muted/30 p-3 text-sm text-muted-foreground sm:col-span-2">Signers, signature places and notarization are fixed once a contract is sent. To change them, delete this contract and send it again.</p></>:<><label className="block text-sm font-semibold">Category<select value={category} onChange={event=>{const next=event.target.value as keyof typeof categories;setCategory(next);if(!categories[next].includes(documentType))setDocumentType(categories[next][0]??"Custom document");}} className="form-select mt-2">{Object.keys(categories).map(item=><option key={item}>{item}</option>)}</select></label><label className="block text-sm font-semibold">Document type<select value={documentType} onChange={event=>setDocumentType(event.target.value)} className="form-select mt-2">{categories[category].map(item=><option key={item}>{item}</option>)}</select></label><label className="block text-sm font-semibold">Department<Input maxLength={100} value={department} onChange={event=>setDepartment(event.target.value)} className="mt-2 h-11"/></label><label className="block text-sm font-semibold">Due date<Input type="date" value={dueDate} onChange={event=>setDueDate(event.target.value)} className="mt-2 h-11"/></label><section className="space-y-3 sm:col-span-2"><div><h3 className="text-sm font-semibold">Approval order</h3><p className="mt-1 text-xs text-muted-foreground">Finance Approver and Finance Preparer are appended automatically.</p></div>{routingLocked?<p className="rounded-md border bg-muted/30 p-3 text-sm text-muted-foreground">Approval routing is locked because a reviewer has already acted or the document is no longer pending. Document details can still be edited.</p>:<><ol className="space-y-2">{approverIds.map((id,index)=>{const profile=profiles.find(item=>item.id===id);return <li key={`${id}-${index}`} className="flex items-center gap-2 rounded-md border p-2"><span className="min-w-0 flex-1 truncate text-sm">{index+1}. {profile?.full_name||profile?.email||"Unavailable approver"}</span><Button type="button" variant="ghost" size="icon" aria-label={`Move ${profile?.full_name||"approver"} up`} disabled={index===0} onClick={()=>moveApprover(index,-1)}><ArrowUp className="h-4 w-4"/></Button><Button type="button" variant="ghost" size="icon" aria-label={`Move ${profile?.full_name||"approver"} down`} disabled={index===approverIds.length-1} onClick={()=>moveApprover(index,1)}><ArrowDown className="h-4 w-4"/></Button><Button type="button" variant="ghost" size="icon" aria-label={`Remove ${profile?.full_name||"approver"}`} onClick={()=>setApproverIds(current=>current.filter((_,itemIndex)=>itemIndex!==index))}><X className="h-4 w-4"/></Button></li>;})}</ol><div className="flex gap-2"><select aria-label="Add approver" value={candidateId} onChange={event=>setCandidateId(event.target.value)} className="form-select"><option value="">Add approver</option>{availableApprovers.filter(profile=>!approverIds.includes(profile.id)).map(profile=><option key={profile.id} value={profile.id}>{profile.full_name||profile.email}</option>)}</select><Button type="button" variant="outline" disabled={!candidateId} onClick={()=>{if(candidateId&&!approverIds.includes(candidateId))setApproverIds(current=>[...current,candidateId]);setCandidateId("");}}>Add</Button></div><label className="block text-sm font-semibold">Finance Approver<select required value={financeApproverId} onChange={event=>setFinanceApproverId(event.target.value)} className="form-select mt-2"><option value="">Choose Finance Approver</option>{financeApprovers.map(profile=><option key={profile.id} value={profile.id}>{profile.full_name||profile.email}</option>)}</select></label><label className="block text-sm font-semibold">Finance Preparer<select required value={financePreparerId} onChange={event=>setFinancePreparerId(event.target.value)} className="form-select mt-2"><option value="">Choose Finance Preparer</option>{financePreparers.map(profile=><option key={profile.id} value={profile.id}>{profile.full_name||profile.email}</option>)}</select></label></>}</section></>}{error&&<p role="alert" className="text-sm font-medium text-destructive sm:col-span-2">{error}</p>}<div className="flex justify-end gap-3 sm:col-span-2"><Button type="button" variant="outline" onClick={()=>setOpen(false)}>Cancel</Button><Button type="submit" disabled={saving}>{saving?"Saving…":"Save changes"}</Button></div></form></DialogContent></Dialog>;
 }
 
 function DeleteDocumentButton({document,onDeleted}:{document:PortalDocument;onDeleted:()=>Promise<void>}) {
@@ -492,7 +531,7 @@ function DeleteDocumentButton({document,onDeleted}:{document:PortalDocument;onDe
 function ApprovalProgressTracker({document}:{document:PortalDocument}) {
   const steps=document.approval_steps??[];
   if(!steps.length)return null;
-  return <div className="mb-4 rounded-md border bg-muted/20 p-4"><h3 className="mb-3 text-sm font-semibold">Approval progress</h3><ol className="space-y-2">{steps.map(step=><li key={step.sequence_no} className="flex items-center justify-between gap-3 text-sm"><span className="font-medium">{step.full_name}{step.role_label?` · ${step.role_label}`:""}</span><span className={step.status==="approved"?"text-success":step.status==="pending"?"font-semibold text-primary":"text-muted-foreground"}>{step.status==="approved"?"Signed":step.status==="pending"?"Next to sign":step.status==="skipped"?"Stopped":"Waiting"}</span></li>)}</ol></div>;
+  return <div className="mb-4 rounded-md border bg-muted/20 p-4"><h3 className="mb-3 text-sm font-semibold">Approval progress</h3><ol className="space-y-2">{steps.map(step=><li key={step.sequence_no} className="flex items-center justify-between gap-3 text-sm"><span className="font-medium">{step.full_name}{step.role_label?` · ${step.role_label}`:""}</span><span className={step.status==="approved"?"text-success":step.status==="pending"?"font-semibold text-primary":"text-muted-foreground"}>{step.status==="approved"?(step.role_label==="Notary"?"Notarized":step.role_label==="Sender"?"Sent":"Signed"):step.status==="pending"?(step.role_label==="Notary"?"Next to notarize":"Next to sign"):step.status==="skipped"?"Stopped":step.status==="rejected"?"Rejected":"Waiting"}</span></li>)}</ol></div>;
 }
 
 function ApprovalStepActions({documentId,onDecision,onSigned}:{documentId:string;onDecision:(id:string,comment?:string)=>Promise<void>;onSigned:()=>Promise<void>}) {
@@ -629,13 +668,17 @@ function SettingsWorkspace({ profiles, onSaved, onDeleted }:{ profiles: Profile[
   const [department, setDepartment] = useState("");
   const [financeRole, setFinanceRole] = useState<Profile["finance_role"]>("");
   const [isAdmin, setIsAdmin] = useState(false);
+  const [isNotary, setIsNotary] = useState(false);
+  const [notaryCommission, setNotaryCommission] = useState("");
+  const [notaryJurisdiction, setNotaryJurisdiction] = useState("");
+  const [notaryExpires, setNotaryExpires] = useState("");
   const [editingId, setEditingId] = useState("");
   const [saving, setSaving] = useState(false);
   const [syncingCrmUsers, setSyncingCrmUsers] = useState(false);
   const [crmSyncMessage, setCrmSyncMessage] = useState("");
   const [error, setError] = useState("");
   const [emailStatus, setEmailStatus] = useState<{ tone: "success" | "warning"; message: string } | null>(null);
-  const managedProfiles = profiles.filter((profile) => profile.id !== CRM_USER_ID && (!profile.is_admin || profile.finance_role !== ""));
+  const managedProfiles = profiles.filter((profile) => profile.id !== CRM_USER_ID && (!profile.is_admin || profile.finance_role !== "" || profile.is_notary));
 
   async function syncCrmUsers() {
     setSyncingCrmUsers(true);
@@ -657,6 +700,10 @@ function SettingsWorkspace({ profiles, onSaved, onDeleted }:{ profiles: Profile[
     setDepartment("");
     setFinanceRole("");
     setIsAdmin(false);
+    setIsNotary(false);
+    setNotaryCommission("");
+    setNotaryJurisdiction("");
+    setNotaryExpires("");
     setEditingId("");
   }
 
@@ -674,6 +721,10 @@ function SettingsWorkspace({ profiles, onSaved, onDeleted }:{ profiles: Profile[
           department,
           finance_role: financeRole,
           is_admin: isAdmin,
+          is_notary: isNotary,
+          notary_commission: notaryCommission,
+          notary_jurisdiction: notaryJurisdiction,
+          notary_commission_expires: notaryExpires,
         },
       });
       const savedEmail = email;
@@ -711,6 +762,10 @@ function SettingsWorkspace({ profiles, onSaved, onDeleted }:{ profiles: Profile[
     setDepartment(profile.department);
     setFinanceRole(profile.finance_role);
     setIsAdmin(profile.is_admin);
+    setIsNotary(Boolean(profile.is_notary));
+    setNotaryCommission(profile.notary_commission ?? "");
+    setNotaryJurisdiction(profile.notary_jurisdiction ?? "");
+    setNotaryExpires(profile.notary_commission_expires ?? "");
     setError("");
     setEmailStatus(null);
   }
@@ -719,15 +774,17 @@ function SettingsWorkspace({ profiles, onSaved, onDeleted }:{ profiles: Profile[
     { title: "Approvers", roleLabel: "Approver", entries: managedProfiles.filter((profile) => !profile.finance_role) },
     { title: "Finance Preparers", roleLabel: "Finance Preparer", entries: managedProfiles.filter((profile) => profile.finance_role === "preparer") },
     { title: "Finance Approvers", roleLabel: "Finance Approver", entries: managedProfiles.filter((profile) => profile.finance_role === "approver") },
+    { title: "Notaries", roleLabel: "Notary", entries: managedProfiles.filter((profile) => profile.is_notary) },
   ];
+  const today = new Date().toISOString().slice(0, 10);
 
-  return <div className="mx-auto max-w-[1500px] p-4 md:p-8"><div className="mb-8 flex flex-wrap items-center justify-between gap-4"><div><p className="mb-1 text-sm font-semibold text-primary">DOCUMENT CONTROL</p><h1 className="text-3xl font-bold tracking-normal md:text-4xl">Settings</h1><p className="mt-2 text-muted-foreground">Manage approval and finance contacts used to route payment requisitions.</p>{crmSyncMessage && <p className="mt-2 text-sm text-muted-foreground" role="status">{crmSyncMessage}</p>}</div><Button type="button" variant="outline" onClick={() => void syncCrmUsers()} disabled={syncingCrmUsers}>{syncingCrmUsers ? "Fetching users…" : "Fetch users from CRM"}</Button></div><div className="grid gap-6 xl:grid-cols-[420px_minmax(0,1fr)]"><form onSubmit={submit} className="h-fit rounded-lg border bg-card p-5"><h2 className="text-lg font-bold">{editingId ? "Edit user" : "Add user"}</h2><p className="mt-1 text-sm text-muted-foreground">Maintain the people available in approval and finance routing.</p><div className="mt-5 space-y-4"><label className="block text-sm font-semibold">Name<Input required value={fullName} onChange={(event)=>setFullName(event.target.value)} className="mt-2 h-11" placeholder="e.g. James Ndlovu" /></label><label className="block text-sm font-semibold">Email<Input required type="email" value={email} onChange={(event)=>setEmail(event.target.value)} className="mt-2 h-11" placeholder="james@company.co.za" /></label><label className="block text-sm font-semibold">Role<select value={financeRole} onChange={(event)=>setFinanceRole(event.target.value as Profile["finance_role"])} className="mt-2 h-11 w-full rounded-md border bg-background px-3 text-sm"><option value="">Approver</option><option value="preparer">Finance Preparer</option><option value="approver">Finance Approver</option></select></label><label className="block text-sm font-semibold">Department<Input value={department} onChange={(event)=>setDepartment(event.target.value)} className="mt-2 h-11" placeholder="Finance" /></label>{error && <p className="text-sm font-medium text-destructive">{error}</p>}{emailStatus&&<p className={`text-sm ${emailStatus.tone==="success"?"text-success":"text-warning"}`}>{emailStatus.message}</p>}<Button type="submit" className="w-full" disabled={saving}>{saving ? "Saving…" : editingId ? "Save changes" : "Add user"}</Button>{editingId&&<Button type="button" variant="outline" className="w-full" onClick={resetForm}>Cancel edit</Button>}</div></form><div className="space-y-5">{groups.map(group=><section key={group.title} className="rounded-lg border bg-card p-5"><h2 className="text-lg font-bold">{group.title}</h2><div className="mt-4 space-y-3">{group.entries.length ? group.entries.map(profile=><div key={profile.id} className="flex flex-wrap items-center justify-between gap-4 rounded-md border p-3"><div><p className="font-semibold">{profile.full_name || profile.email}</p><p className="text-sm text-muted-foreground">{profile.email} · {group.roleLabel}{profile.is_admin?" · Admin":""}{profile.department?` · ${profile.department}`:""}</p></div><div className="flex gap-2"><Button type="button" variant="outline" size="sm" onClick={()=>startEditing(profile)}>Edit</Button>{!profile.is_admin&&<Button type="button" variant="ghost" size="sm" className="text-destructive" onClick={()=>void removeApprover(profile.id)}>Remove</Button>}</div></div>) : <p className="rounded-md border border-dashed p-4 text-sm text-muted-foreground">No {group.title.toLowerCase()} configured yet.</p>}</div></section>)}</div></div><AutofillAccuracyPanel/></div>;
+  return <div className="mx-auto max-w-[1500px] p-4 md:p-8"><div className="mb-8 flex flex-wrap items-center justify-between gap-4"><div><p className="mb-1 text-sm font-semibold text-primary">DOCUMENT CONTROL</p><h1 className="text-3xl font-bold tracking-normal md:text-4xl">Settings</h1><p className="mt-2 text-muted-foreground">Manage approval, finance and notary contacts used to route requisitions and contracts.</p>{crmSyncMessage && <p className="mt-2 text-sm text-muted-foreground" role="status">{crmSyncMessage}</p>}</div><Button type="button" variant="outline" onClick={() => void syncCrmUsers()} disabled={syncingCrmUsers}>{syncingCrmUsers ? "Fetching users…" : "Fetch users from CRM"}</Button></div><div className="grid gap-6 xl:grid-cols-[420px_minmax(0,1fr)]"><form onSubmit={submit} className="h-fit rounded-lg border bg-card p-5"><h2 className="text-lg font-bold">{editingId ? "Edit user" : "Add user"}</h2><p className="mt-1 text-sm text-muted-foreground">Maintain the people available in approval and finance routing.</p><div className="mt-5 space-y-4"><label className="block text-sm font-semibold">Name<Input required value={fullName} onChange={(event)=>setFullName(event.target.value)} className="mt-2 h-11" placeholder="e.g. James Ndlovu" /></label><label className="block text-sm font-semibold">Email<Input required type="email" value={email} onChange={(event)=>setEmail(event.target.value)} className="mt-2 h-11" placeholder="james@company.co.za" /></label><label className="block text-sm font-semibold">Role<select value={financeRole} onChange={(event)=>setFinanceRole(event.target.value as Profile["finance_role"])} className="mt-2 h-11 w-full rounded-md border bg-background px-3 text-sm"><option value="">Approver</option><option value="preparer">Finance Preparer</option><option value="approver">Finance Approver</option></select></label><label className="block text-sm font-semibold">Department<Input value={department} onChange={(event)=>setDepartment(event.target.value)} className="mt-2 h-11" placeholder="Finance" /></label><div className="rounded-md border p-3"><label className="flex items-start gap-2 text-sm font-semibold"><input type="checkbox" checked={isNotary} onChange={(event)=>setIsNotary(event.target.checked)} className="mt-0.5 h-4 w-4"/><span>Notary public<span className="block text-xs font-normal text-muted-foreground">Can be chosen to notarize contracts after all parties sign.</span></span></label>{isNotary&&<div className="mt-3 space-y-3"><label className="block text-sm font-semibold">Commission / registration no.<Input required maxLength={80} value={notaryCommission} onChange={(event)=>setNotaryCommission(event.target.value)} className="mt-2 h-10" placeholder="e.g. NP-2291"/></label><label className="block text-sm font-semibold">Jurisdiction<Input maxLength={100} value={notaryJurisdiction} onChange={(event)=>setNotaryJurisdiction(event.target.value)} className="mt-2 h-10" placeholder="e.g. Republic of Zambia"/></label><label className="block text-sm font-semibold">Commission expires<Input type="date" value={notaryExpires} onChange={(event)=>setNotaryExpires(event.target.value)} className="mt-2 h-10"/></label></div>}</div>{error && <p className="text-sm font-medium text-destructive">{error}</p>}{emailStatus&&<p className={`text-sm ${emailStatus.tone==="success"?"text-success":"text-warning"}`}>{emailStatus.message}</p>}<Button type="submit" className="w-full" disabled={saving}>{saving ? "Saving…" : editingId ? "Save changes" : "Add user"}</Button>{editingId&&<Button type="button" variant="outline" className="w-full" onClick={resetForm}>Cancel edit</Button>}</div></form><div className="space-y-5">{groups.map(group=><section key={group.title} className="rounded-lg border bg-card p-5"><h2 className="text-lg font-bold">{group.title}</h2><div className="mt-4 space-y-3">{group.entries.length ? group.entries.map(profile=><div key={profile.id} className="flex flex-wrap items-center justify-between gap-4 rounded-md border p-3"><div><p className="font-semibold">{profile.full_name || profile.email}</p><p className="text-sm text-muted-foreground">{profile.email} · {group.roleLabel}{profile.is_admin?" · Admin":""}{profile.department?` · ${profile.department}`:""}{group.roleLabel==="Notary"?` · No. ${profile.notary_commission}${profile.notary_commission_expires?` · ${profile.notary_commission_expires<today?"expired":"expires"} ${profile.notary_commission_expires}`:""}`:""}</p></div><div className="flex gap-2"><Button type="button" variant="outline" size="sm" onClick={()=>startEditing(profile)}>Edit</Button>{!profile.is_admin&&<Button type="button" variant="ghost" size="sm" className="text-destructive" onClick={()=>void removeApprover(profile.id)}>Remove</Button>}</div></div>) : <p className="rounded-md border border-dashed p-4 text-sm text-muted-foreground">No {group.title.toLowerCase()} configured yet.</p>}</div></section>)}</div></div><AutofillAccuracyPanel/></div>;
 }
 
-function DocumentFileButton({documentId}:{documentId:string}) {
+function DocumentFileButton({documentId,label="Preview PR"}:{documentId:string;label?:string}) {
   const [opening,setOpening]=useState(false); const [error,setError]=useState("");
   async function openFile(){setOpening(true);setError("");try{const file=await getDocumentFileFn({data:{documentId,mode:"preview"}});const bytes=Uint8Array.from(atob(file.fileData),character=>character.charCodeAt(0));const url=URL.createObjectURL(new Blob([bytes],{type:file.mimeType}));const tab=window.open(url,"_blank","noopener,noreferrer");if(!tab){const link=document.createElement("a");link.href=url;link.download=file.fileName;link.click();}setTimeout(()=>URL.revokeObjectURL(url),60000);}catch(caught){setError(caught instanceof Error?caught.message:"Could not open the preview.");}finally{setOpening(false);}}
-  return <span><Button variant="outline" size="sm" onClick={()=>void openFile()} disabled={opening}><Files className="h-4 w-4"/>{opening?"Opening…":"Preview PR"}</Button>{error&&<span className="ml-2 text-xs text-destructive">{error}</span>}</span>;
+  return <span><Button variant="outline" size="sm" onClick={()=>void openFile()} disabled={opening}><Files className="h-4 w-4"/>{opening?"Opening…":label}</Button>{error&&<span className="ml-2 text-xs text-destructive">{error}</span>}</span>;
 }
 
 function SignatureDialog({documentId,onSigned}:{documentId:string;onSigned:()=>Promise<void>}) {
