@@ -10,12 +10,18 @@
 
 import { Route as rootRouteImport } from './routes/__root'
 import { Route as IndexRouteImport } from './routes/index'
+import { Route as ContractRouteImport } from './routes/contract'
 import { Route as PaymentRequisitionRouteImport } from './routes/payment-requisition'
 import { Route as AuthCrmCallbackRouteImport } from './routes/auth.crm-callback'
 
 const IndexRoute = IndexRouteImport.update({
   id: '/',
   path: '/',
+  getParentRoute: () => rootRouteImport,
+} as any)
+const ContractRoute = ContractRouteImport.update({
+  id: '/contract',
+  path: '/contract',
   getParentRoute: () => rootRouteImport,
 } as any)
 const PaymentRequisitionRoute = PaymentRequisitionRouteImport.update({
@@ -31,30 +37,39 @@ const AuthCrmCallbackRoute = AuthCrmCallbackRouteImport.update({
 
 export interface FileRoutesByFullPath {
   '/': typeof IndexRoute
+  '/contract': typeof ContractRoute
   '/payment-requisition': typeof PaymentRequisitionRoute
   '/auth/crm-callback': typeof AuthCrmCallbackRoute
 }
 export interface FileRoutesByTo {
   '/': typeof IndexRoute
+  '/contract': typeof ContractRoute
   '/payment-requisition': typeof PaymentRequisitionRoute
   '/auth/crm-callback': typeof AuthCrmCallbackRoute
 }
 export interface FileRoutesById {
   __root__: typeof rootRouteImport
   '/': typeof IndexRoute
+  '/contract': typeof ContractRoute
   '/payment-requisition': typeof PaymentRequisitionRoute
   '/auth/crm-callback': typeof AuthCrmCallbackRoute
 }
 export interface FileRouteTypes {
   fileRoutesByFullPath: FileRoutesByFullPath
-  fullPaths: '/' | '/payment-requisition' | '/auth/crm-callback'
+  fullPaths: '/' | '/contract' | '/payment-requisition' | '/auth/crm-callback'
   fileRoutesByTo: FileRoutesByTo
-  to: '/' | '/payment-requisition' | '/auth/crm-callback'
-  id: '__root__' | '/' | '/payment-requisition' | '/auth/crm-callback'
+  to: '/' | '/contract' | '/payment-requisition' | '/auth/crm-callback'
+  id:
+    | '__root__'
+    | '/'
+    | '/contract'
+    | '/payment-requisition'
+    | '/auth/crm-callback'
   fileRoutesById: FileRoutesById
 }
 export interface RootRouteChildren {
   IndexRoute: typeof IndexRoute
+  ContractRoute: typeof ContractRoute
   PaymentRequisitionRoute: typeof PaymentRequisitionRoute
   AuthCrmCallbackRoute: typeof AuthCrmCallbackRoute
 }
@@ -66,6 +81,13 @@ declare module '@tanstack/react-router' {
       path: '/'
       fullPath: '/'
       preLoaderRoute: typeof IndexRouteImport
+      parentRoute: typeof rootRouteImport
+    }
+    '/contract': {
+      id: '/contract'
+      path: '/contract'
+      fullPath: '/contract'
+      preLoaderRoute: typeof ContractRouteImport
       parentRoute: typeof rootRouteImport
     }
     '/payment-requisition': {
@@ -87,6 +109,7 @@ declare module '@tanstack/react-router' {
 
 const rootRouteChildren: RootRouteChildren = {
   IndexRoute: IndexRoute,
+  ContractRoute: ContractRoute,
   PaymentRequisitionRoute: PaymentRequisitionRoute,
   AuthCrmCallbackRoute: AuthCrmCallbackRoute,
 }
