@@ -1,6 +1,7 @@
 import { useEffect, useState } from "react";
 import { BadgeCheck, Download, Fingerprint, PenLine, Stamp } from "lucide-react";
 import { Button } from "@/components/ui/button";
+import { DrawSignatureButton } from "@/components/SignaturePad";
 import { Textarea } from "@/components/ui/textarea";
 import { ContractPdfPages } from "./ContractPdfPages";
 import { ReadonlyFieldLayer } from "./ContractFieldLayer";
@@ -135,6 +136,11 @@ function SignatureOnFile({ state }: { state: ReturnType<typeof useMySignature> }
           }}
         />
       </label>
+      <DrawSignatureButton
+        onDrawn={state.save}
+        disabled={state.saving || state.loading}
+        label={state.signature ? "Draw a new one" : "Draw signature"}
+      />
       {state.error && (
         <p role="alert" className="w-full text-sm text-destructive">
           {state.error}
