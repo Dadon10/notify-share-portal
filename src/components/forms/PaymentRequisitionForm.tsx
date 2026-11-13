@@ -1,6 +1,7 @@
 import { useEffect, useMemo, useRef, useState, type ChangeEvent, type FormEvent } from "react";
 import { ArrowLeft, FilePlus2, Paperclip, PencilLine, ScanText, UploadCloud } from "lucide-react";
 import { Button } from "@/components/ui/button";
+import { DrawSignatureButton } from "@/components/SignaturePad";
 import { Input } from "@/components/ui/input";
 import { Textarea } from "@/components/ui/textarea";
 import {
@@ -932,6 +933,11 @@ export function PaymentRequisitionForm({
                   }}
                 />
               </label>
+              <DrawSignatureButton
+                onDrawn={(file) => savePersonalSignature(file)}
+                disabled={savingSignature || loadingSignature}
+                label="or draw it"
+              />
               <span className="text-xs text-muted-foreground">
                 Use a clear signature on a plain background (PNG or JPG). We remove the background
                 and place it neatly on the PR; screenshots and photos are rejected.

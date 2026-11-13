@@ -10,6 +10,7 @@ import { DateRangeFilter, type DateFilter } from "@/components/DateRangeFilter";
 import { Input } from "@/components/ui/input";
 import { Textarea } from "@/components/ui/textarea";
 import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle } from "@/components/ui/dialog";
+import { DrawSignatureButton } from "@/components/SignaturePad";
 import {
   createPortalDocumentFn,
   deletePortalDocumentFn,
@@ -224,6 +225,7 @@ function Portal() {
 
   return (
     <div className="min-h-screen bg-background text-foreground">
+      {mobileNav && <div className="fixed inset-0 z-30 bg-foreground/40 lg:hidden" onClick={() => setMobileNav(false)} aria-hidden />}
       <aside className={`fixed inset-y-0 left-0 z-40 w-64 border-r border-sidebar-border bg-sidebar transition-transform lg:translate-x-0 ${mobileNav ? "translate-x-0" : "-translate-x-full"}`}>
         <div className="flex h-20 items-center justify-between border-b border-sidebar-border px-6">
           <img src="/sanlam-logo.png" alt="Sanlam" className="h-8 w-auto rounded-sm" />
@@ -235,7 +237,7 @@ function Portal() {
           ))}
         </nav>
         <div className="absolute bottom-0 w-full border-t border-sidebar-border p-4">
-          <Button variant="nav" className="w-full justify-start" onClick={() => setActive("Settings")}><Settings />Settings</Button>
+          <Button variant={active === "Settings" ? "navActive" : "nav"} className="w-full justify-start" onClick={() => {setActive("Settings");setMobileNav(false);}}><Settings />Settings</Button>
           <div className="mt-3 flex items-center gap-3 rounded-md bg-sidebar-accent p-3">
             <div className="grid h-9 w-9 place-items-center rounded-full bg-primary text-sm font-bold text-primary-foreground">{(activeUser.full_name || "C").charAt(0).toUpperCase()}</div>
             <div className="min-w-0 flex-1"><p className="truncate text-sm font-semibold">{activeUser.full_name}</p><p className="truncate text-xs text-muted-foreground">{activeUser.role || effectiveRole}</p></div>
@@ -548,6 +550,18 @@ function ApprovalStepActions({documentId,onDecision,onSigned}:{documentId:string
     });
     return ()=>{cancelled=true;};
   },[]);
+  async function saveDrawnSignature(file:File) {
+    setSaving(true);setError("");
+    try {
+      const bytes=new Uint8Array(await file.arrayBuffer());
+      let binary="";
+      for(let offset=0;offset<bytes.length;offset+=0x8000)binary+=String.fromCharCode(...bytes.subarray(offset,offset+0x8000));
+      setSignature(await saveMySignatureFn({data:{mimeType:file.type,fileData:btoa(binary)}}));
+      setReplaceSignature(false);
+    } catch(caught) {
+      setError(caught instanceof Error?caught.message:"Could not save your signature.");
+    } finally {setSaving(false);}
+  }
   async function sign(event:FormEvent<HTMLFormElement>) {
     event.preventDefault();
     setSaving(true);setError("");
@@ -580,7 +594,7 @@ function ApprovalStepActions({documentId,onDecision,onSigned}:{documentId:string
     finally {setSaving(false);}
   }
   return <div className="mb-5 rounded-md border p-4"><form onSubmit={sign} className="flex flex-wrap items-end gap-3">
-    {loadingSignature?<p className="flex-1 text-sm text-muted-foreground">Loading your saved signature…</p>:signature&&!replaceSignature?<div className="min-w-52 flex-1"><p className="mb-2 text-sm font-semibold">Saved signature</p><div className="flex flex-wrap items-center gap-3"><div className="grid h-14 min-w-32 place-items-center rounded border bg-white px-3"><img src={`data:${signature.mimeType};base64,${signature.fileData}`} alt="Your saved signature" className="max-h-12 max-w-40 object-contain"/></div><Button type="button" variant="outline" size="sm" onClick={()=>setReplaceSignature(true)} disabled={saving}>Replace signature</Button></div></div>:<label className="min-w-52 flex-1 text-sm font-semibold">{signature?"Upload replacement signature":"Your signature"}<input name="signature" type="file" accept="image/png,image/jpeg" required className="mt-2 block w-full rounded-md border p-2 text-sm font-normal"/></label>}
+    {loadingSignature?<p className="flex-1 text-sm text-muted-foreground">Loading your saved signature…</p>:signature&&!replaceSignature?<div className="min-w-52 flex-1"><p className="mb-2 text-sm font-semibold">Saved signature</p><div className="flex flex-wrap items-center gap-3"><div className="grid h-14 min-w-32 place-items-center rounded border bg-white px-3"><img src={`data:${signature.mimeType};base64,${signature.fileData}`} alt="Your saved signature" className="max-h-12 max-w-40 object-contain"/></div><Button type="button" variant="outline" size="sm" onClick={()=>setReplaceSignature(true)} disabled={saving}>Replace signature</Button></div></div>:<label className="min-w-52 flex-1 text-sm font-semibold">{signature?"Upload replacement signature":"Your signature"}<input name="signature" type="file" accept="image/png,image/jpeg" required className="mt-2 block w-full rounded-md border p-2 text-sm font-normal"/><span className="mt-2 flex items-center gap-2 text-xs font-normal text-muted-foreground">or <DrawSignatureButton onDrawn={saveDrawnSignature} disabled={saving} label="draw it on screen"/></span></label>}
     {signature&&replaceSignature&&<Button type="button" variant="outline" onClick={()=>setReplaceSignature(false)} disabled={saving}>Keep saved signature</Button>}
     <Button type="submit" disabled={saving||loadingSignature}>{saving?"Saving…":"Approve and sign"}</Button>
   </form><div className="mt-4 flex flex-wrap items-end gap-3"><label className="min-w-52 flex-1 text-sm font-semibold">Reject reason<Textarea value={reason} onChange={event=>setReason(event.target.value)} maxLength={2000} className="mt-2 min-h-20" placeholder="Explain why this requisition is rejected."/></label><Button type="button" variant="destructive" onClick={()=>void reject()} disabled={saving||!reason.trim()}>Reject</Button></div>{error&&<p role="alert" className="mt-3 text-sm font-medium text-destructive">{error}</p>}</div>;
