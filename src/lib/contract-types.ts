@@ -67,7 +67,7 @@ export type ContractSummary = {
   documentId: string;
   pageCount: number;
   notarize: boolean;
-  notary: { id: string; full_name: string; commission: string; jurisdiction: string } | null;
+  notary: { id: string; full_name: string } | null;
   originalSha256: string;
   finalSha256: string | null;
   notarizedAt: string | null;

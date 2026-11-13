@@ -126,7 +126,8 @@ function ensureProfileSchema() {
   if (!columns.some((column) => column.name === "finance_role")) {
     database.exec("ALTER TABLE profiles ADD COLUMN finance_role TEXT NOT NULL DEFAULT ''");
   }
-  // Notaries are ordinary CRM profiles with a commission on file; they can be asked to notarize contracts.
+  // Notaries are ordinary CRM profiles marked in Settings; they can be asked to notarize contracts.
+  // (The notary_commission* columns are no longer used but are kept so existing databases still open.)
   if (!columns.some((column) => column.name === "is_notary")) {
     database.exec("ALTER TABLE profiles ADD COLUMN is_notary INTEGER NOT NULL DEFAULT 0");
   }
@@ -276,9 +277,6 @@ export type PortalProfile = {
   is_admin: boolean;
   has_signature?: boolean;
   is_notary: boolean;
-  notary_commission: string;
-  notary_jurisdiction: string;
-  notary_commission_expires: string;
 };
 
 export type CrmIdentity = {
@@ -369,7 +367,7 @@ export function getPortalData(currentUserId: string, isAdmin: boolean) {
   const profiles = database.prepare(
     `SELECT id, full_name, email, department, finance_role,
        CAST(is_admin AS INTEGER) AS is_admin,
-       CAST(is_notary AS INTEGER) AS is_notary, notary_commission, notary_jurisdiction, notary_commission_expires,
+       CAST(is_notary AS INTEGER) AS is_notary,
        EXISTS (SELECT 1 FROM user_signatures s WHERE s.user_id = profiles.id) AS has_signature
      FROM profiles ORDER BY full_name`,
   ).all() as unknown as PortalProfile[];
@@ -406,20 +404,9 @@ export async function upsertApproverProfile(input: {
   finance_role?: "" | "preparer" | "approver";
   is_admin?: boolean;
   is_notary?: boolean;
-  notary_commission?: string;
-  notary_jurisdiction?: string;
-  notary_commission_expires?: string;
 }) {
   const fullName = input.full_name.trim();
   const isNotary = Boolean(input.is_notary);
-  const notaryCommission = isNotary ? (input.notary_commission ?? "").trim() : "";
-  const notaryJurisdiction = isNotary ? (input.notary_jurisdiction ?? "").trim() : "";
-  const notaryExpires = isNotary ? (input.notary_commission_expires ?? "").trim() : "";
-  if (isNotary && !notaryCommission) throw new Error("Enter the notary's commission or registration number.");
-  if (notaryCommission.length > 80 || notaryJurisdiction.length > 100) throw new Error("Notary details are too long.");
-  if (notaryExpires && (!/^\d{4}-\d{2}-\d{2}$/.test(notaryExpires) || Number.isNaN(new Date(`${notaryExpires}T00:00:00Z`).getTime()))) {
-    throw new Error("Choose a valid commission expiry date.");
-  }
   const email = input.email.trim();
   const department = input.department.trim();
   const financeRole = input.finance_role ?? "";
@@ -430,19 +417,16 @@ export async function upsertApproverProfile(input: {
   database.exec("BEGIN");
   try {
     database.prepare(
-      `INSERT INTO profiles (id, full_name, email, department, finance_role, is_admin, is_notary, notary_commission, notary_jurisdiction, notary_commission_expires)
-       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+      `INSERT INTO profiles (id, full_name, email, department, finance_role, is_admin, is_notary)
+       VALUES (?, ?, ?, ?, ?, ?, ?)
        ON CONFLICT(id) DO UPDATE SET
          full_name = excluded.full_name,
          email = excluded.email,
          department = excluded.department,
          finance_role = excluded.finance_role,
          is_admin = excluded.is_admin,
-         is_notary = excluded.is_notary,
-         notary_commission = excluded.notary_commission,
-         notary_jurisdiction = excluded.notary_jurisdiction,
-         notary_commission_expires = excluded.notary_commission_expires`,
-    ).run(profileId, fullName, email, department, financeRole, input.is_admin ? 1 : 0, isNotary ? 1 : 0, notaryCommission, notaryJurisdiction, notaryExpires);
+         is_notary = excluded.is_notary`,
+    ).run(profileId, fullName, email, department, financeRole, input.is_admin ? 1 : 0, isNotary ? 1 : 0);
     database.exec("COMMIT");
   } catch (error) {
     database.exec("ROLLBACK");

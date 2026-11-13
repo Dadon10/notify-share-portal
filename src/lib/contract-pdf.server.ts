@@ -346,7 +346,7 @@ export async function appendCompletionCertificate(
     sentAt: Date;
     originalSha256: string;
     signers: CompletionSigner[];
-    notarized: { notaryName: string; commission: string; notarizedAt: Date } | null;
+    notarized: { notaryName: string; notarizedAt: Date } | null;
     completedAt: Date;
   },
 ) {
@@ -377,7 +377,7 @@ export async function appendCompletionCertificate(
     writer.rule();
     writer.text("Notarization", { bold: true, size: 12, gap: 6 });
     writer.text(
-      `Notarized by ${input.notarized.notaryName} (commission no. ${input.notarized.commission}) on ${formatContractDateTime(input.notarized.notarizedAt)}, who initialled every page (${initialsOf(input.notarized.notaryName)}).`,
+      `Notarized by ${input.notarized.notaryName} on ${formatContractDateTime(input.notarized.notarizedAt)}, who initialled every page (${initialsOf(input.notarized.notaryName)}).`,
       { gap: 8 },
     );
   }

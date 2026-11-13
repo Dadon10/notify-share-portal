@@ -250,9 +250,6 @@ export const upsertApproverProfileFn = createServerFn({ method: "POST" })
     finance_role?: "" | "preparer" | "approver";
     is_admin?: boolean;
     is_notary?: boolean;
-    notary_commission?: string;
-    notary_jurisdiction?: string;
-    notary_commission_expires?: string;
   }) => input)
   .handler(({ data }) => {
     const currentUser = getCurrentCrmIdentity();
