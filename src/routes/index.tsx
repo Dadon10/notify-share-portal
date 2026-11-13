@@ -1,4 +1,4 @@
-import { createFileRoute, useNavigate } from "@tanstack/react-router";
+import { createFileRoute } from "@tanstack/react-router";
 import { useEffect, useMemo, useRef, useState, type ChangeEvent, type FormEvent } from "react";
 import {
   Bell, Check, CheckCircle2, ChevronDown, Clock3, FileCheck2, FilePlus2, FileSignature,
@@ -31,6 +31,8 @@ import {
 } from "@/lib/portal.functions";
 import { CONTRACT_DOCUMENT_TYPES } from "@/lib/contract-types";
 import { ContractDownloadButton, ContractInfoPanel, ContractReviewCard } from "@/components/contract/ContractPanels";
+import { PaymentRequisitionForm, type Profile as RequisitionProfile } from "@/components/forms/PaymentRequisitionForm";
+import { ContractForm, type Profile as ContractProfile } from "@/components/forms/ContractForm";
 
 type DocStatus = string;
 type PortalDocument = {
@@ -107,7 +109,6 @@ export const Route = createFileRoute("/")({
 
 function Portal() {
   const initial = Route.useLoaderData();
-  const navigate = useNavigate();
   const [active, setActive] = useState("Overview");
   const [mobileNav, setMobileNav] = useState(false);
   const [search, setSearch] = useState("");
@@ -229,11 +230,9 @@ function Portal() {
           <Button variant="ghost" size="icon" className="lg:hidden" onClick={() => setMobileNav(false)} aria-label="Close navigation"><X /></Button>
         </div>
         <nav className="space-y-1 p-4" aria-label="Main navigation">
-          {[{n:"Overview",i:LayoutDashboard},{n:"Documents",i:Files},{n:"Approvals",i:FileCheck2},{n:"Templates",i:FolderOpen}].map(({n,i:Icon}) => (
+          {[{n:"Overview",i:LayoutDashboard},{n:"Documents",i:Files},{n:"Approvals",i:FileCheck2},{n:"Templates",i:FolderOpen},{n:"New payment requisition",i:ReceiptText},{n:"New contract",i:FileSignature}].map(({n,i:Icon}) => (
             <Button key={n} variant={active === n ? "navActive" : "nav"} className="w-full justify-start" onClick={() => {setActive(n);setMobileNav(false)}}><Icon />{n}{n === "Approvals" && <span className="ml-auto rounded-full bg-warning-soft px-2 py-0.5 text-[11px] font-bold text-warning">{counts.pending}</span>}</Button>
           ))}
-          <p className="px-3 pb-1 pt-5 text-[11px] font-semibold uppercase tracking-[0.12em] text-muted-foreground">Create</p>
-          <Button variant="nav" className="w-full justify-start" onClick={() => {setMobileNav(false);void navigate({ to: "/payment-requisition" });}}><ReceiptText />New payment requisition</Button>
         </nav>
         <div className="absolute bottom-0 w-full border-t border-sidebar-border p-4">
           <Button variant="nav" className="w-full justify-start" onClick={() => setActive("Settings")}><Settings />Settings</Button>
@@ -250,17 +249,9 @@ function Portal() {
           <div className="relative max-w-xl flex-1"><Search className="absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-muted-foreground"/><Input value={search} onChange={(e)=>setSearch(e.target.value)} placeholder="Search documents, people or reference…" className="h-11 bg-muted/60 pl-10 shadow-none" /></div>
           <Button variant="ghost" size="icon" aria-label="Notifications"><Bell /></Button>
           <Button
-            variant="outline"
-            className="hidden sm:inline-flex"
-            onClick={() => void navigate({ to: "/contract" })}
-          >
-            <FileSignature />
-            New contract
-          </Button>
-          <Button
             variant="default"
             className="hidden sm:inline-flex"
-            onClick={() => void navigate({ to: "/payment-requisition" })}
+            onClick={() => setActive("New payment requisition")}
           >
             <FilePlus2 />
             New document
@@ -269,19 +260,10 @@ function Portal() {
             variant="default"
             size="icon"
             className="sm:hidden"
-            onClick={() => void navigate({ to: "/payment-requisition" })}
+            onClick={() => setActive("New payment requisition")}
             aria-label="New document"
           >
             <FilePlus2 />
-          </Button>
-          <Button
-            variant="outline"
-            size="icon"
-            className="sm:hidden"
-            onClick={() => void navigate({ to: "/contract" })}
-            aria-label="New contract"
-          >
-            <FileSignature />
           </Button>
         </header>
 
@@ -314,18 +296,11 @@ function Portal() {
                 <Button
                   variant="onPrimary"
                   className="mt-5 w-full"
-                  onClick={() => void navigate({ to: "/payment-requisition" })}
+                  onClick={() => setActive("New payment requisition")}
                 >
                   Start submission
                 </Button>
-                <button
-                  type="button"
-                  className="mt-3 inline-flex w-full items-center justify-center gap-2 text-sm font-semibold opacity-90 hover:underline"
-                  onClick={() => void navigate({ to: "/contract" })}
-                >
-                  <FileSignature className="h-4 w-4" />
-                  Send a contract for signature
-                </button>
+
               </div>
               <div className="rounded-lg border bg-card p-5">
                 <div className="flex items-center justify-between"><h2 className="font-bold">Review queue</h2><span className="text-xs font-semibold text-primary">{counts.pending} OPEN</span></div>
@@ -335,6 +310,25 @@ function Portal() {
           </section>
         </div>
         {active === "Templates" && <TemplateLibrary />}
+        {active === "New payment requisition" && (
+          <PaymentRequisitionForm
+            embedded
+            user={activeUser}
+            profiles={profiles.filter((profile) => profile.id !== CRM_USER_ID) as unknown as RequisitionProfile[]}
+            onDone={() => { void loadData(); setActive("Documents"); }}
+            onCancel={() => setActive("Overview")}
+            onOpenContract={() => setActive("New contract")}
+          />
+        )}
+        {active === "New contract" && (
+          <ContractForm
+            embedded
+            user={activeUser}
+            profiles={profiles.filter((profile) => profile.id !== CRM_USER_ID) as unknown as ContractProfile[]}
+            onDone={() => { void loadData(); setActive("Documents"); }}
+            onCancel={() => setActive("Overview")}
+          />
+        )}
         {active === "Settings" && isAdmin && <SettingsWorkspace profiles={profiles} onSaved={loadData} onDeleted={loadData} />}
         {!isAdmin && active === "Settings" && <div className="mx-auto max-w-[1500px] p-4 md:p-8"><div className="rounded-lg border border-dashed bg-card p-10 text-center"><p className="text-lg font-bold">Administrator access required</p><p className="mt-2 text-sm text-muted-foreground">Sign in with a CRM administrator account to manage portal settings.</p></div></div>}
         {(active === "Documents" || active === "Approvals") && <DocumentWorkspace active={active} documents={documents} profiles={profiles} currentUserId={activeUser.id} isAdmin={isAdmin} focusedDocumentId={approvalDocumentId} search={search} onDecision={async (id, comment) => { await updateDocumentStatusFn({ data: { id, status: "rejected", comment: comment ?? "" } }); await loadData(); }} onSigned={loadData} />}
