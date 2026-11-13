@@ -1,0 +1,80 @@
+[
+  {
+    "file": "Sample_Dummy_Invoice.pdf",
+    "notes": "Fictitious sample. Its only account number is the supplier's bank account, so no customer account must be suggested.",
+    "expect": {
+      "invoiceNumber": "INV-2026-001",
+      "invoiceDate": "06/11/2026",
+      "billingPeriod": "01/11/2026 to 30/11/2026",
+      "accountId": "",
+      "payee": "ABC Business Solutions Ltd",
+      "amount": "11600.00",
+      "currency": "ZMW",
+      "paymentPurpose": "Professional Consulting Services, Compliance Review Services, Administrative Support (November '26)"
+    },
+    "mustFlag": [
+      "accountId",
+      "billingPeriod"
+    ]
+  },
+  {
+    "file": "155.-INFRATEL-INVOICE--SEPTEMBER-2026-SANLAM.pdf",
+    "notes": "Finance uses the RC receipt number as the Infratel invoice number (matches the completed PR).",
+    "expect": {
+      "invoiceNumber": "RC00000015155",
+      "invoiceDate": "01/09/2026",
+      "billingPeriod": "01/09/2026 to 30/09/2026",
+      "accountId": "00500",
+      "payee": "Infratel Corporation Limited",
+      "amount": "16160.41",
+      "currency": "ZMW",
+      "paymentPurpose": "Azure Windows VM hosting services and additional active storage (September '26)"
+    },
+    "mustFlag": [
+      "billingPeriod"
+    ],
+    "expectTaxIds": []
+  },
+  {
+    "file": "SLI091-IN-3145178-d3ff7255-f225-4f09-ad8c-d09a0221bf02.pdf",
+    "notes": "Totals block on page 2 prints figures before their labels; 'Discount Total 0.00' must never be taken as the total.",
+    "expect": {
+      "invoiceNumber": "IN-3145178",
+      "invoiceDate": "19/08/2026",
+      "billingPeriod": "18/07/2026 to 18/08/2026",
+      "accountId": "SLI091",
+      "payee": "Liquid Telecommunications Zambia Limited (Pty) Ltd",
+      "amount": "102.31",
+      "currency": "USD",
+      "paymentPurpose": "Office 365 E3, Microsoft 365 Copilot, Exchange Online (Plan 2) (July '26)"
+    },
+    "mustFlag": [
+      "amount",
+      "billingPeriod"
+    ],
+    "expectTaxIds": [
+      "10346071/13",
+      "1002077389"
+    ]
+  },
+  {
+    "file": "Synthetic_Kafue_Office_Supplies.pdf",
+    "notes": "Fictitious (tools/make-synthetic.ts). Month-name service period on a line, supplier bank account number, 'Discount Total 0.00' above 'Amount Due', Sanlam TPIN in the Bill To block.",
+    "expect": {
+      "invoiceNumber": "KOS-2026-0417",
+      "invoiceDate": "03/11/2026",
+      "billingPeriod": "01/10/2026 to 31/10/2026",
+      "accountId": "KOS-4471",
+      "payee": "Kafue Office Supplies Ltd",
+      "amount": "3480.00",
+      "currency": "ZMW",
+      "paymentPurpose": "Printer lease, Toner cartridges (October '26)"
+    },
+    "expectTaxIds": [
+      "1009988776"
+    ],
+    "mustFlag": [
+      "billingPeriod"
+    ]
+  }
+]
