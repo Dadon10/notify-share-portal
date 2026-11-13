@@ -8,7 +8,6 @@ import {
   assertDocumentVisible,
   crmUserId,
   database,
-  getUserSignature,
   recordDocumentActivity,
   signatureDirectory,
   uploadDirectory,
@@ -17,7 +16,8 @@ import { sendDocumentApprovalEmail, sendDocumentCompletedEmail } from "./email.s
 import { cleanSignatureImage } from "./invoice-pr.server";
 import {
   appendCompletionCertificate,
-  appendNotarialCertificate,
+  initialsOf,
+  stampNotaryInitials,
   inspectContractPdf,
   sha256,
   stampContractFields,
@@ -25,8 +25,6 @@ import {
 import {
   CONTRACT_CATEGORY,
   CONTRACT_DOCUMENT_TYPES,
-  NOTARIAL_ACTS,
-  NOTARY_ID_METHODS,
   type ContractField,
   type ContractFieldInput,
   type ContractFieldKind,
@@ -657,24 +655,15 @@ export async function signContract(input: {
   return { signedAt, completed: !next };
 }
 
+/**
+ * Notarizes a fully signed contract: the notary's handwritten-style initials go in the bottom-right corner of every
+ * page, then the certificate of completion is added.
+ */
 export async function notarizeContract(input: {
   documentId: string;
   notaryId: string;
-  act: string;
-  venue: string;
-  idMethod: string;
-  notes: string;
   identityConfirmed: boolean;
 }) {
-  if (!(NOTARIAL_ACTS as readonly string[]).includes(input.act))
-    throw new Error("Choose the notarial act.");
-  if (!(NOTARY_ID_METHODS as readonly string[]).includes(input.idMethod))
-    throw new Error("Choose how the signers' identities were verified.");
-  const venue = input.venue.trim();
-  if (!venue || venue.length > 160)
-    throw new Error("Enter where the notarization took place (town and country).");
-  const notes = input.notes.trim();
-  if (notes.length > 1000) throw new Error("Notes must be 1000 characters or fewer.");
   if (!input.identityConfirmed)
     throw new Error("Confirm that you verified each signer's identity before notarizing.");
 
@@ -691,40 +680,18 @@ export async function notarizeContract(input: {
   const notary = getProfile(input.notaryId);
   if (!notary) throw new Error("Your CRM profile could not be found.");
   assertNotaryActive(notary);
-  const savedSignature = getUserSignature(input.notaryId);
-  if (!savedSignature) throw new Error("Save your signature before notarizing.");
 
   const notarizedAtDate = new Date();
   const notarizedAt = notarizedAtDate.toISOString();
   const workingPath = getWorkingCopy(contract);
   const before = readFileSync(workingPath);
   const signedSha256 = sha256(before);
-  const signerSteps = steps.filter((step) => step.step_role === "signer");
-  let after: Buffer = await appendNotarialCertificate(before, {
-    documentId: input.documentId,
-    title: (
-      database.prepare("SELECT title FROM documents WHERE id = ?").get(input.documentId) as {
-        title: string;
-      }
-    ).title,
-    notary: {
-      fullName: notary.full_name,
-      commission: notary.notary_commission,
-      jurisdiction: notary.notary_jurisdiction,
-      commissionExpires: notary.notary_commission_expires,
-      signaturePng: Buffer.from(savedSignature.fileData, "base64"),
-    },
-    act: input.act,
-    venue,
-    idMethod: input.idMethod,
-    notes,
-    signers: signerSteps.map((step) => ({
-      fullName: step.full_name,
-      signedAt: new Date(step.decided_at ?? notarizedAt),
-    })),
-    signedSha256,
-    notarizedAt: notarizedAtDate,
-  });
+  // Signers' boxes are passed so the initials never land on top of an initials line in the corner.
+  let after: Buffer = await stampNotaryInitials(
+    before,
+    notary.full_name,
+    getFields(input.documentId),
+  );
   after = await finishContract(
     input.documentId,
     after,
@@ -740,11 +707,8 @@ export async function notarizeContract(input: {
       title: string;
     }
   ).title;
-  const signatureId = crypto.randomUUID();
-  const signaturePath = join(signatureDirectory, `${input.documentId}-${signatureId}.png`);
 
   try {
-    writeFileSync(signaturePath, Buffer.from(savedSignature.fileData, "base64"), { flag: "wx" });
     database.exec("BEGIN");
     const stillCurrent = database
       .prepare(
@@ -753,18 +717,6 @@ export async function notarizeContract(input: {
       .get(input.documentId) as { id: string } | undefined;
     if (stillCurrent?.id !== current.id)
       throw new Error("This contract has already been notarized or rejected.");
-    database
-      .prepare(
-        "INSERT INTO document_signatures (id, document_id, signer_id, signature_path, mime_type, signed_at) VALUES (?, ?, ?, ?, ?, ?)",
-      )
-      .run(
-        signatureId,
-        input.documentId,
-        input.notaryId,
-        signaturePath,
-        savedSignature.mimeType,
-        notarizedAt,
-      );
     database
       .prepare("UPDATE document_approvals SET status = 'approved', decided_at = ? WHERE id = ?")
       .run(notarizedAt, current.id);
@@ -778,11 +730,9 @@ export async function notarizeContract(input: {
       .run(
         sha256(after),
         notarizedAt,
-        input.act,
+        "Initialled",
         JSON.stringify({
-          venue,
-          idMethod: input.idMethod,
-          notes,
+          initials: initialsOf(notary.full_name),
           signedSha256,
           commission: notary.notary_commission,
           jurisdiction: notary.notary_jurisdiction,
@@ -795,13 +745,13 @@ export async function notarizeContract(input: {
     recordDocumentActivity(
       input.documentId,
       "notarized",
-      `${notary.full_name} notarized the contract (${input.act}, ${venue}; identity: ${input.idMethod}).`,
+      `${notary.full_name} confirmed the signers' identities and notarized the contract (initials ${initialsOf(notary.full_name)} on every page).`,
       input.notaryId,
     );
     recordDocumentActivity(
       input.documentId,
       "completed",
-      "Notarial certificate and certificate of completion added.",
+      "Certificate of completion added.",
       input.notaryId,
     );
     replaceFile(workingPath, after);
@@ -809,11 +759,6 @@ export async function notarizeContract(input: {
   } catch (error) {
     if (database.isTransaction) database.exec("ROLLBACK");
     writeFileSync(workingPath, before);
-    try {
-      unlinkSync(signaturePath);
-    } catch {
-      // Not written.
-    }
     throw error;
   }
   await notifyAfterStep(input.documentId, input.notaryId, title, undefined, true);

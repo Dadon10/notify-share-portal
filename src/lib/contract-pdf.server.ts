@@ -1,9 +1,12 @@
 /**
- * PDF work for contracts: placing signatures/initials/dates in the boxes the sender drew, the notary's seal and
- * notarial certificate, and the certificate of completion. Pure functions over PDF bytes so they can be tested
- * without the database.
+ * PDF work for contracts: placing signatures/initials/dates in the boxes the sender drew, the notary's handwritten
+ * initials, and the certificate of completion. Pure functions over PDF bytes so they can be tested without the
+ * database.
  */
 import { createHash } from "node:crypto";
+import { readFileSync } from "node:fs";
+import { join } from "node:path";
+import fontkit from "@pdf-lib/fontkit";
 import {
   PDFDocument,
   StandardFonts,
@@ -13,10 +16,11 @@ import {
   type PDFImage,
   type PDFPage,
 } from "pdf-lib";
-import type { ContractFieldInput, ContractFieldKind } from "./contract-types";
+import { initialsOf, type ContractFieldInput, type ContractFieldKind } from "./contract-types";
+
+export { initialsOf };
 
 const INK = rgb(0.08, 0.16, 0.36);
-const SEAL = rgb(0.55, 0.08, 0.12);
 const MUTED = rgb(0.38, 0.4, 0.45);
 const TEXT = rgb(0.12, 0.13, 0.16);
 const RULE = rgb(0.82, 0.84, 0.87);
@@ -48,14 +52,14 @@ export function formatContractDateTime(date: Date) {
   }).format(date)} (CAT)`;
 }
 
-export function initialsOf(fullName: string) {
-  return fullName
-    .split(/[\s-]+/)
-    .map((part) => part.trim())
-    .filter(Boolean)
-    .map((part) => part.charAt(0).toUpperCase())
-    .join(".")
-    .concat(".");
+// Homemade Apple (Apache 2.0, see public/fonts) gives initials a pen-on-paper look.
+const HANDWRITING_FONT_PATH = join(process.cwd(), "public", "fonts", "HomemadeApple-Regular.woff");
+let handwritingFontBytes: Buffer | null = null;
+
+async function embedHandwritingFont(pdf: PDFDocument) {
+  handwritingFontBytes ??= readFileSync(HANDWRITING_FONT_PATH);
+  pdf.registerFontkit(fontkit);
+  return await pdf.embedFont(handwritingFontBytes, { subset: true });
 }
 
 /** Loads a contract and rejects files that cannot be signed (not a PDF, encrypted, empty). */
@@ -196,7 +200,7 @@ export async function stampContractFields(
   const pdf = await PDFDocument.load(pdfBytes, { updateMetadata: false });
   const pages = pdf.getPages();
   const signature = await pdf.embedPng(signer.signaturePng);
-  const script = await pdf.embedFont(StandardFonts.TimesRomanBoldItalic);
+  const script = await embedHandwritingFont(pdf);
   const plain = await pdf.embedFont(StandardFonts.Helvetica);
   const values: Record<Exclude<ContractFieldKind, "signature">, { font: PDFFont; text: string }> = {
     initials: { font: script, text: initialsOf(signer.fullName) },
@@ -373,7 +377,7 @@ export async function appendCompletionCertificate(
     writer.rule();
     writer.text("Notarization", { bold: true, size: 12, gap: 6 });
     writer.text(
-      `Notarized by ${input.notarized.notaryName} (commission no. ${input.notarized.commission}) on ${formatContractDateTime(input.notarized.notarizedAt)}. See the notarial certificate.`,
+      `Notarized by ${input.notarized.notaryName} (commission no. ${input.notarized.commission}) on ${formatContractDateTime(input.notarized.notarizedAt)}, who initialled every page (${initialsOf(input.notarized.notaryName)}).`,
       { gap: 8 },
     );
   }
@@ -385,185 +389,56 @@ export async function appendCompletionCertificate(
   return Buffer.from(await pdf.save());
 }
 
-function drawSeal(
-  page: PDFPage,
-  fonts: { regular: PDFFont; bold: PDFFont },
-  center: { x: number; y: number },
-  notary: { fullName: string; commission: string; jurisdiction: string },
-) {
-  const outer = 58;
-  page.drawCircle({ x: center.x, y: center.y, size: outer, borderColor: SEAL, borderWidth: 2.4 });
-  page.drawCircle({
-    x: center.x,
-    y: center.y,
-    size: outer - 6,
-    borderColor: SEAL,
-    borderWidth: 0.8,
-  });
-  page.drawCircle({
-    x: center.x,
-    y: center.y,
-    size: outer - 21,
-    borderColor: SEAL,
-    borderWidth: 0.8,
-  });
-  const ringText = (text: string, startAngle: number, clockwise: boolean) => {
-    const value = encodable(fonts.bold, text.toUpperCase());
-    const size = 7.2;
-    const radius = outer - 15.5;
-    const tracking = 0.8;
-    const totalWidth = fonts.bold.widthOfTextAtSize(value, size) + tracking * value.length;
-    const sweep = totalWidth / radius;
-    // Top text runs clockwise with letter tops outward; bottom text runs anticlockwise with tops inward.
-    const baseRadius = clockwise ? radius - size * 0.35 : radius + size * 0.35;
-    let angle = clockwise ? startAngle + sweep / 2 : startAngle - sweep / 2;
-    for (const character of value) {
-      const charWidth = fonts.bold.widthOfTextAtSize(character, size);
-      const step = (charWidth + tracking) / radius;
-      const mid = clockwise ? angle - step / 2 : angle + step / 2;
-      const rotation = clockwise ? mid - Math.PI / 2 : mid + Math.PI / 2;
-      // Glyphs are drawn from their left baseline point; step back half a width so each is centred on the arc.
-      const x = center.x + baseRadius * Math.cos(mid) - (charWidth / 2) * Math.cos(rotation);
-      const y = center.y + baseRadius * Math.sin(mid) - (charWidth / 2) * Math.sin(rotation);
-      page.drawText(character, {
-        x,
-        y,
-        size,
-        font: fonts.bold,
-        color: SEAL,
-        rotate: degrees((rotation * 180) / Math.PI),
-      });
-      angle = clockwise ? angle - step : angle + step;
-    }
-  };
-  ringText(notary.jurisdiction || "Notary Public", Math.PI / 2, true);
-  ringText(`Commission No. ${notary.commission}`, -Math.PI / 2, false);
-  const centered = (text: string, font: PDFFont, size: number, dy: number) => {
-    const value = encodable(font, text);
-    let fitted = size;
-    while (fitted > 4 && font.widthOfTextAtSize(value, fitted) > (outer - 24) * 2) fitted -= 0.25;
-    page.drawText(value, {
-      x: center.x - font.widthOfTextAtSize(value, fitted) / 2,
-      y: center.y + dy,
-      size: fitted,
-      font,
-      color: SEAL,
-    });
-  };
-  centered("NOTARY", fonts.bold, 9, 9);
-  centered(notary.fullName, fonts.bold, 8, -2);
-  centered("PUBLIC", fonts.bold, 9, -14);
+/**
+ * Notarizes by writing the notary's initials (e.g. "KM") in handwriting-style ink in the bottom-right corner of
+ * every page of the contract. Call it before the certificate of completion is added, so that page stays clean.
+ */
+type PageBox = { page: number; x: number; y: number; width: number; height: number };
+
+/**
+ * Where the notary's initials go on one page: the bottom-right corner, moved up (then left) when a signer's box
+ * already sits there, e.g. an "Initials: ____" line in the corner.
+ */
+export function notaryCornerBox(page: number, occupied: PageBox[]) {
+  const size = { width: 0.15, height: 0.06 };
+  const taken = occupied.filter((box) => box.page === page);
+  const overlaps = (x: number, y: number) =>
+    taken.some(
+      (box) =>
+        x < box.x + box.width + 0.01 &&
+        x + size.width > box.x - 0.01 &&
+        y < box.y + box.height + 0.01 &&
+        y + size.height > box.y - 0.01,
+    );
+  const candidates: { x: number; y: number }[] = [];
+  for (let step = 0; step < 6; step += 1) candidates.push({ x: 0.8, y: 0.905 - step * 0.07 });
+  for (let step = 1; step < 4; step += 1) candidates.push({ x: 0.8 - step * 0.17, y: 0.905 });
+  const spot = candidates.find(({ x, y }) => !overlaps(x, y)) ?? candidates[0]!;
+  return { ...spot, ...size };
 }
 
-export type NotarizationInput = {
-  documentId: string;
-  title: string;
-  notary: {
-    fullName: string;
-    commission: string;
-    jurisdiction: string;
-    commissionExpires: string;
-    signaturePng: Uint8Array;
-  };
-  act: string;
-  venue: string;
-  idMethod: string;
-  notes: string;
-  signers: { fullName: string; signedAt: Date }[];
-  signedSha256: string;
-  notarizedAt: Date;
-};
-
-/** Adds a "notarized" footer to every contract page and appends the sealed notarial certificate. */
-export async function appendNotarialCertificate(pdfBytes: Uint8Array, input: NotarizationInput) {
+export async function stampNotaryInitials(
+  pdfBytes: Uint8Array,
+  notaryName: string,
+  occupied: PageBox[] = [],
+) {
   const pdf = await PDFDocument.load(pdfBytes, { updateMetadata: false });
-  const fonts = await certificateFonts(pdf);
-  const footer = `Notarized by ${input.notary.fullName}, Notary Public, commission no. ${input.notary.commission}, on ${formatContractDate(input.notarizedAt)}. Ref ${input.documentId.slice(0, 8).toUpperCase()}. See notarial certificate.`;
-  for (const page of pdf.getPages()) {
-    const place = placeOnPage(page, { x: 0.04, y: 0.972, width: 0.92, height: 0.018 });
-    const size = Math.max(5, Math.min(7, place.viewWidth / 90));
-    let value = encodable(fonts.regular, footer);
-    while (value.length > 10 && fonts.regular.widthOfTextAtSize(value, size) > place.width)
-      value = `${value.slice(0, -4)}…`;
-    page.drawText(value, {
-      ...place.offset(0, 2),
+  const font = await embedHandwritingFont(pdf);
+  const initials = encodable(font, initialsOf(notaryName));
+  pdf.getPages().forEach((page, index) => {
+    const place = placeOnPage(page, notaryCornerBox(index, occupied));
+    // About 6 mm tall on an A4 page, never wider than the corner box.
+    let size = Math.min(place.viewWidth * 0.038, place.height);
+    while (size > 6 && font.widthOfTextAtSize(initials, size) > place.width) size -= 0.5;
+    const width = font.widthOfTextAtSize(initials, size);
+    page.drawText(initials, {
+      // Right-aligned in the corner box, with a slight upward slant like a quick pen mark.
+      ...place.offset(place.width - width, place.height * 0.2),
       size,
-      font: fonts.regular,
-      color: SEAL,
-      rotate: place.rotate,
-    });
-  }
-
-  const writer = new CertificateWriter(pdf, fonts, "Notarial certificate");
-  writer.pair("Notarial act", input.act);
-  writer.pair("Venue", input.venue);
-  writer.pair("Document", input.title);
-  writer.pair("Reference", input.documentId, true);
-  writer.rule();
-  const names = input.signers.map((signer) => signer.fullName);
-  const listed =
-    names.length > 1 ? `${names.slice(0, -1).join(", ")} and ${names.at(-1)}` : (names[0] ?? "");
-  const statement =
-    input.act.startsWith("Jurat") || input.act.startsWith("Oath")
-      ? `Subscribed and sworn to (or affirmed) before me on ${formatContractDate(input.notarizedAt)} by ${listed}, whose identity was established by: ${input.idMethod}.`
-      : input.act.startsWith("Copy")
-        ? `I certify that the attached document, bearing the signatures of ${listed}, is a true, exact, complete and unaltered copy of the document presented to me on ${formatContractDate(input.notarizedAt)}.`
-        : `On ${formatContractDate(input.notarizedAt)}, before me, the undersigned notary public, ${listed} acknowledged that they signed the attached document voluntarily and for the purposes stated in it. Identity was established by: ${input.idMethod}.`;
-  writer.text(statement, { size: 11, gap: 10 });
-  if (input.notes.trim()) writer.pair("Notary's notes", input.notes.trim());
-  writer.text("Signatures witnessed", { bold: true, gap: 4 });
-  for (const signer of input.signers)
-    writer.text(`${signer.fullName} — signed ${formatContractDateTime(signer.signedAt)}`, {
-      indent: 14,
-      size: 9,
-      color: MUTED,
-      gap: 2,
-    });
-  writer.y -= 6;
-  writer.pair("Fingerprint of the signed document notarized (SHA-256)", input.signedSha256, true);
-
-  writer.ensure(170);
-  const top = writer.y;
-  const signature = await pdf.embedPng(input.notary.signaturePng);
-  const scale = Math.min(190 / signature.width, 54 / signature.height);
-  writer.page.drawImage(signature, {
-    x: writer.margin,
-    y: top - 62,
-    width: signature.width * scale,
-    height: signature.height * scale,
-  });
-  writer.page.drawLine({
-    start: { x: writer.margin, y: top - 66 },
-    end: { x: writer.margin + 220, y: top - 66 },
-    thickness: 0.8,
-    color: TEXT,
-  });
-  const lines = [
-    [input.notary.fullName, fonts.bold],
-    ["Notary Public", fonts.regular],
-    [`Commission no. ${input.notary.commission}`, fonts.regular],
-    [input.notary.jurisdiction ? `Jurisdiction: ${input.notary.jurisdiction}` : "", fonts.regular],
-    [
-      input.notary.commissionExpires
-        ? `Commission expires ${formatContractDate(new Date(`${input.notary.commissionExpires}T12:00:00Z`))}`
-        : "",
-      fonts.regular,
-    ],
-    [`Notarized ${formatContractDateTime(input.notarizedAt)}`, fonts.regular],
-  ] as const;
-  let lineY = top - 80;
-  for (const [value, font] of lines) {
-    if (!value) continue;
-    writer.page.drawText(encodable(font, value), {
-      x: writer.margin,
-      y: lineY,
-      size: 9,
       font,
-      color: TEXT,
+      color: INK,
+      rotate: degrees(place.rotate.angle + 4),
     });
-    lineY -= 13;
-  }
-  drawSeal(writer.page, fonts, { x: writer.width - writer.margin - 70, y: top - 74 }, input.notary);
-  writer.y = Math.min(lineY, top - 150) - 10;
+  });
   return Buffer.from(await pdf.save());
 }

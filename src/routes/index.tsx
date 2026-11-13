@@ -1,7 +1,7 @@
 import { createFileRoute } from "@tanstack/react-router";
 import { useEffect, useMemo, useRef, useState, type ChangeEvent, type FormEvent } from "react";
 import {
-  Bell, Check, CheckCircle2, ChevronDown, Clock3, FileCheck2, FilePlus2, FileSignature,
+  Bell, Check, CheckCircle2, ChevronDown, Clock3, FileCheck2, FilePlus2,
   Files, FolderOpen, LayoutDashboard, Menu, PenLine, Pencil, Search, Settings, ArrowDown, ArrowUp,
   ReceiptText, ShieldCheck, Trash2, UploadCloud, Users, X, XCircle,
 } from "lucide-react";
@@ -230,8 +230,8 @@ function Portal() {
           <Button variant="ghost" size="icon" className="lg:hidden" onClick={() => setMobileNav(false)} aria-label="Close navigation"><X /></Button>
         </div>
         <nav className="space-y-1 p-4" aria-label="Main navigation">
-          {[{n:"Overview",i:LayoutDashboard},{n:"Documents",i:Files},{n:"Approvals",i:FileCheck2},{n:"Templates",i:FolderOpen},{n:"New payment requisition",i:ReceiptText},{n:"New contract",i:FileSignature}].map(({n,i:Icon}) => (
-            <Button key={n} variant={active === n ? "navActive" : "nav"} className="w-full justify-start" onClick={() => {setActive(n);setMobileNav(false)}}><Icon />{n}{n === "Approvals" && <span className="ml-auto rounded-full bg-warning-soft px-2 py-0.5 text-[11px] font-bold text-warning">{counts.pending}</span>}</Button>
+          {[{n:"Overview",i:LayoutDashboard},{n:"Documents",i:Files},{n:"Approvals",i:FileCheck2},{n:"Templates",i:FolderOpen},{n:"New payment requisition",i:ReceiptText}].map(({n,i:Icon}) => (
+            <Button key={n} variant={active === n || (n === "New payment requisition" && active === "New contract") ? "navActive" : "nav"} className="w-full justify-start" onClick={() => {setActive(n);setMobileNav(false)}}><Icon />{n}{n === "Approvals" && <span className="ml-auto rounded-full bg-warning-soft px-2 py-0.5 text-[11px] font-bold text-warning">{counts.pending}</span>}</Button>
           ))}
         </nav>
         <div className="absolute bottom-0 w-full border-t border-sidebar-border p-4">

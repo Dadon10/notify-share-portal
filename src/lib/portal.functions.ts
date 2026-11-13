@@ -235,7 +235,7 @@ export const signContractFn = createServerFn({ method: "POST" })
   });
 
 export const notarizeContractFn = createServerFn({ method: "POST" })
-  .validator((input: { documentId: string; act: string; venue: string; idMethod: string; notes: string; identityConfirmed: boolean }) => input)
+  .validator((input: { documentId: string; identityConfirmed: boolean }) => input)
   .handler(({ data }) => {
     const currentUser = getCurrentCrmIdentity();
     return notarizeContract({ ...data, notaryId: currentUser.id });

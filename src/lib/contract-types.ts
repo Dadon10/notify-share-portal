@@ -13,6 +13,16 @@ export const CONTRACT_DOCUMENT_TYPES = [
   "Power of attorney",
 ] as const;
 
+/** "Kennedy Malama" -> "KM", written the way people initial a page. */
+export function initialsOf(fullName: string) {
+  return fullName
+    .split(/[\s-]+/)
+    .map((part) => part.trim())
+    .filter(Boolean)
+    .map((part) => part.charAt(0).toUpperCase())
+    .join("");
+}
+
 export type ContractFieldKind = "signature" | "initials" | "date" | "name";
 
 export const CONTRACT_FIELD_LABELS: Record<ContractFieldKind, string> = {
@@ -52,22 +62,6 @@ export type ContractField = ContractFieldInput & {
   id: string;
   completedAt: string | null;
 };
-
-export const NOTARIAL_ACTS = [
-  "Acknowledgment",
-  "Jurat (sworn statement)",
-  "Oath / affirmation",
-  "Copy certification",
-] as const;
-export type NotarialAct = (typeof NOTARIAL_ACTS)[number];
-
-export const NOTARY_ID_METHODS = [
-  "Personally known to me",
-  "National registration card",
-  "Passport",
-  "Driver's licence",
-] as const;
-export type NotaryIdMethod = (typeof NOTARY_ID_METHODS)[number];
 
 export type ContractSummary = {
   documentId: string;
