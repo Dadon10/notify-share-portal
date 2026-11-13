@@ -35,6 +35,8 @@ Data is stored locally in `data/` (SQLite database, uploads and signatures), whi
 2. Mark where each person signs: drag **Signature**, **Initials**, **Date signed** or **Full name** boxes onto the pages. Each signer needs at least one signature box.
 3. Optionally tick **Notarize** and choose a notary. Administrators mark people as notaries in **Settings**, with their commission number, jurisdiction and expiry date.
 
-Each signer signs from **Approvals**. Their saved signature, initials, name and the date are stamped into their boxes. When the notary's turn comes (after every party has signed), they record the notarial act, venue and how they verified identity. Their signature, a seal and a notarial certificate page are then added, along with a footer on every page. Every finished contract gets a certificate of completion with SHA-256 fingerprints of the original upload and the signed document. The untouched original is kept and can be downloaded.
+Each signer signs from **Approvals**. Their saved signature, name and the date are stamped into their boxes, and initials are written in a handwriting-style font. When the notary's turn comes (after every party has signed), they confirm they verified each signer's identity. The portal then writes the notary's initials (e.g. "KM" for Kennedy Malama) in handwriting-style ink in the bottom-right corner of every page, moving them up if a signer's box already sits there. Every finished contract gets a certificate of completion with the SHA-256 fingerprint of the original upload. The untouched original is kept and can be downloaded.
+
+The handwriting font is Homemade Apple (Apache 2.0), in `public/fonts/`.
 
 The portal records an electronic notarization. Whether that is legally valid depends on the jurisdiction's rules for electronic notarial acts. The notary named on the contract is responsible for meeting them.

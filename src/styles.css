@@ -1,6 +1,13 @@
 @import "tailwindcss" source(none);
 @source "../src";
 @import "tw-animate-css";
+
+/* Handwriting font used for initials; the same file is embedded into contract PDFs. */
+@font-face {
+  font-family: "Homemade Apple";
+  src: url("/fonts/HomemadeApple-Regular.woff") format("woff");
+  font-display: swap;
+}
 @custom-variant dark (&:is(.dark *));
 @theme inline {
   --font-sans: "Arial", "Helvetica Neue", sans-serif;

@@ -1,7 +1,6 @@
 import { useEffect, useState } from "react";
 import { BadgeCheck, Download, Fingerprint, PenLine, Stamp } from "lucide-react";
 import { Button } from "@/components/ui/button";
-import { Input } from "@/components/ui/input";
 import { Textarea } from "@/components/ui/textarea";
 import { ContractPdfPages } from "./ContractPdfPages";
 import { ReadonlyFieldLayer } from "./ContractFieldLayer";
@@ -14,12 +13,7 @@ import {
   saveMySignatureFn,
   signContractFn,
 } from "@/lib/portal.functions";
-import {
-  CONTRACT_FIELD_LABELS,
-  NOTARIAL_ACTS,
-  NOTARY_ID_METHODS,
-  type ContractSummary,
-} from "@/lib/contract-types";
+import { CONTRACT_FIELD_LABELS, initialsOf, type ContractSummary } from "@/lib/contract-types";
 
 type Signature = { mimeType: string; fileData: string };
 
@@ -179,10 +173,6 @@ export function ContractReviewCard({
   const [reason, setReason] = useState("");
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState("");
-  const [act, setAct] = useState<string>(NOTARIAL_ACTS[0]);
-  const [venue, setVenue] = useState("");
-  const [idMethod, setIdMethod] = useState<string>(NOTARY_ID_METHODS[1]);
-  const [notes, setNotes] = useState("");
   const [confirmed, setConfirmed] = useState(false);
 
   const myFields =
@@ -210,12 +200,11 @@ export function ContractReviewCard({
   }
 
   async function notarize() {
-    if (!signature.signature) return setError("Save your signature first.");
     setBusy(true);
     setError("");
     try {
       await notarizeContractFn({
-        data: { documentId, act, venue, idMethod, notes, identityConfirmed: confirmed },
+        data: { documentId, identityConfirmed: confirmed },
       });
       await onDone();
     } catch (caught) {
@@ -295,53 +284,17 @@ export function ContractReviewCard({
             </h3>
             <p className="text-sm text-muted-foreground">
               All {summary.signers.length}{" "}
-              {summary.signers.length === 1 ? "party has" : "parties have"} signed. Your signature,
-              seal and a notarial certificate will be added.
+              {summary.signers.length === 1 ? "party has" : "parties have"} signed. Your initials
+              will be written in the bottom-right corner of every page:
             </p>
-            <label className="block text-sm font-semibold">
-              Notarial act
-              <select
-                value={act}
-                onChange={(event) => setAct(event.target.value)}
-                className="form-select mt-2"
+            <div className="flex h-20 items-center justify-end rounded border bg-white px-6">
+              <span
+                className="-rotate-[4deg] text-3xl text-[#142a5c]"
+                style={{ fontFamily: "'Homemade Apple', cursive" }}
               >
-                {NOTARIAL_ACTS.map((item) => (
-                  <option key={item}>{item}</option>
-                ))}
-              </select>
-            </label>
-            <label className="block text-sm font-semibold">
-              Venue
-              <Input
-                value={venue}
-                onChange={(event) => setVenue(event.target.value)}
-                maxLength={160}
-                placeholder="e.g. Lusaka, Zambia"
-                className="mt-2 h-10"
-              />
-            </label>
-            <label className="block text-sm font-semibold">
-              Identity verified by
-              <select
-                value={idMethod}
-                onChange={(event) => setIdMethod(event.target.value)}
-                className="form-select mt-2"
-              >
-                {NOTARY_ID_METHODS.map((item) => (
-                  <option key={item}>{item}</option>
-                ))}
-              </select>
-            </label>
-            <label className="block text-sm font-semibold">
-              Notes (optional)
-              <Textarea
-                value={notes}
-                onChange={(event) => setNotes(event.target.value)}
-                maxLength={1000}
-                className="mt-2 min-h-16"
-              />
-            </label>
-            <SignatureOnFile state={signature} />
+                {initialsOf(summary.notary?.full_name ?? "")}
+              </span>
+            </div>
             <label className="flex items-start gap-2 text-sm">
               <input
                 type="checkbox"
@@ -359,7 +312,7 @@ export function ContractReviewCard({
               type="button"
               className="w-full"
               onClick={() => void notarize()}
-              disabled={busy || !confirmed || !venue.trim() || !signature.signature}
+              disabled={busy || !confirmed}
             >
               {busy ? "Notarizing…" : "Notarize contract"}
             </Button>
@@ -437,7 +390,7 @@ export function ContractInfoPanel({ documentId, status }: { documentId: string; 
                 <Stamp className="h-4 w-4 text-muted-foreground" />
               )}
               {summary.notarizedAt
-                ? `Notarized by ${summary.notary?.full_name} (${summary.notarialAct})`
+                ? `Notarized by ${summary.notary?.full_name} (initials ${initialsOf(summary.notary?.full_name ?? "")})`
                 : `To be notarized by ${summary.notary?.full_name ?? "a notary"}`}
             </span>
           )}

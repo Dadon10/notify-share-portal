@@ -3,8 +3,8 @@
  *
  *   npm run test:contracts
  *
- * Checks that signature/initials/date/name boxes land where they were drawn (also on rotated pages), and that the
- * notarial certificate and certificate of completion are appended.
+ * Checks that signature/initials/date/name boxes land where they were drawn (also on rotated pages), that the
+ * notary's initials go on every page, and that the certificate of completion is appended.
  */
 import { createCanvas } from "@napi-rs/canvas";
 import { PDFDocument, StandardFonts, degrees } from "pdf-lib";
@@ -13,13 +13,14 @@ import { mkdirSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
 import {
   appendCompletionCertificate,
-  appendNotarialCertificate,
   formatContractDate,
   initialsOf,
   inspectContractPdf,
   placeOnPage,
   sha256,
   stampContractFields,
+  stampNotaryInitials,
+  notaryCornerBox,
 } from "../../src/lib/contract-pdf.server";
 
 let failures = 0;
@@ -140,24 +141,27 @@ async function main() {
   writeFileSync(join(outDir, "stamped.pdf"), stamped);
 
   console.log("Notarization and completion");
-  const notarized = await appendNotarialCertificate(stamped, {
-    documentId: "6f1c2b9e-0000-4000-8000-000000000000",
-    title: "Office lease agreement",
-    notary: {
-      fullName: "Mutale Phiri",
-      commission: "NP-2291",
-      jurisdiction: "Republic of Zambia",
-      commissionExpires: "2028-03-31",
-      signaturePng: signaturePng(),
-    },
-    act: "Acknowledgment",
-    venue: "Lusaka, Zambia",
-    idMethod: "National registration card",
-    notes: "",
-    signers: [{ fullName: "Chanda Mwila-Banda", signedAt }],
-    signedSha256: sha256(stamped),
-    notarizedAt: signedAt,
-  });
+  check(
+    "notary initials are letters only",
+    initialsOf("Kennedy Malama") === "KM",
+    initialsOf("Kennedy Malama"),
+  );
+  const notarized = await stampNotaryInitials(stamped, "Mutale Phiri", fields);
+  const corner = notaryCornerBox(0, fields);
+  const initialsField = fields.find((field) => field.page === 0 && field.kind === "initials")!;
+  check(
+    "notary initials move clear of a signer's initials box in the corner",
+    corner.y + corner.height <= initialsField.y || corner.x + corner.width <= initialsField.x,
+    JSON.stringify(corner),
+  );
+  check("empty corner keeps the default spot", notaryCornerBox(0, []).y === 0.905);
+  const notarizedText = await textOf(notarized);
+  check(
+    "notary initials on every page",
+    (notarizedText.match(/\bMP\b/g) ?? []).length === 4,
+    `${(notarizedText.match(/\bMP\b/g) ?? []).length} found`,
+  );
+  check("notarizing adds no pages", (await inspectContractPdf(notarized)).pageCount === 4);
   const completed = await appendCompletionCertificate(notarized, {
     documentId: "6f1c2b9e-0000-4000-8000-000000000000",
     title: "Office lease agreement",
@@ -171,18 +175,16 @@ async function main() {
     completedAt: signedAt,
   });
   const completedText = await textOf(completed);
-  check("notarial certificate page added", completedText.includes("Notarial certificate"));
-  check("acknowledgment wording", /acknowledged that they signed/.test(completedText));
   check(
-    "notarized footer on contract pages",
-    (completedText.match(/Notarized by Mutale Phiri/g) ?? []).length >= 4,
+    "completion certificate mentions notarization",
+    /Notarized by Mutale Phiri/.test(completedText),
   );
   check("completion certificate page added", completedText.includes("Certificate of completion"));
   check(
     "original fingerprint recorded",
     completedText.replace(/\s/g, "").includes(sha256(contract)),
   );
-  check("two certificate pages appended", (await inspectContractPdf(completed)).pageCount === 6);
+  check("one certificate page appended", (await inspectContractPdf(completed)).pageCount === 5);
   writeFileSync(join(outDir, "completed.pdf"), completed);
 
   console.log(failures ? `\n${failures} check(s) failed.` : "\nAll contract checks passed.");
